@@ -13,12 +13,15 @@ Ext.define('CustomApp', {
                 name: 'showNumberOfMonths',
                 xtype: 'rallynumberfield',
                 fieldLabel: 'Date Range (months)'
+            },
+            {
+                name: 'groupByValueStream',
+                xtype: 'rallycheckboxfield',
+                fieldLabel: '',
+                boxLabel: 'Group by Value Stream'
             }
         ];
     },
-
-    //for storing all project rerence
-    projRefCollection: [],
     
     launch: function() {
         this._getAllChildProjectsForCurrentProject(this.project);
@@ -144,7 +147,16 @@ Ext.define('CustomApp', {
         Ext.create('Rally.data.wsapi.Store', {
             model: 'milestone',
             autoLoad: true,
-            filters: that.projectMilestoneFilter ,
+            filters: that.projectMilestoneFilter,
+            //TODO: allow grouping by fields or Category (which is temporarily stored in Notes)
+            groupField: that._getGroupByField(),
+            //Prepare the string to be grouped by
+            getGroupString: function(record) {
+                
+                if (that.getSetting('groupByValueStream')) {
+                    return that._getValueStream(record);
+                }
+            },
             sorters: [
                 {
                     property: 'TargetDate',
@@ -160,6 +172,43 @@ Ext.define('CustomApp', {
                 scope: this
             }
         });
+    },
+    
+    //TODO: add other grouping options
+    _getGroupByField: function() {
+        if (this.getSetting('groupByValueStream')) {
+            return 'Notes';
+        }
+        else
+            return '';
+    },
+    
+    //value stream is currently stored in notes (i.e. "valuestream:value")
+    //this will change once we can create custom fields for milestones
+    //TODO: find a more efficient way to do this
+    _getValueStream: function(record) {
+        var notes = record.get('Notes');
+    
+        //return an empty string if ther are no notes
+        if (!notes || notes.length <= 0) {
+            return '';
+        }
+            
+        //find the value stream within Notes
+        var indexForValueStream = notes.indexOf('valuestream:');
+        
+        if (indexForEndOfValueStream === -1) {
+            return '';
+        }
+        
+        var valueStreamText = notes.slice(indexForValueStream, notes.length);
+        
+        //there is no guarantee that the text will be within a <div>, so we can only check if we are either starting or ending an element
+        var indexForEndOfValueStream = valueStreamText.indexOf('<');
+            
+        var valueStream = valueStreamText.slice((valueStreamText.indexOf(':') + 1), indexForEndOfValueStream);
+            
+        return valueStream;
     },
                     
     _onStoreBuilt: function(store) {
@@ -199,6 +248,10 @@ Ext.define('CustomApp', {
                 'DisplayColor',
                 'Notes'
             ],
+            features: [{
+                ftype: 'groupingsummary',
+                groupHeaderTpl: '{name}'
+            }],
             context: this.getContext(),
             enableEditing: false,
             showRowActionsColumn: false,
