@@ -11,18 +11,124 @@ Ext.define('CustomApp', {
             }
         ];
     },
+
+    //for storing all project rerence
+    projRefCollection: [],
     
     launch: function() {
+        this._getAllChildProjectsForCurrentProject(this.project);
+    },
+    
+    _getAllChildProjectsForCurrentProject: function(currProject){
+        Ext.getBody().mask('Loading...');
         
-        //TODO: build collection of current project and all children
-        //Filter out milestones based on the projects in the collection
-        var context = this.getContext();
-        var project = context.getProject();
+        this.allProjectsList = [];
+        var that = this;
+        var projectStore = Ext.create('Rally.data.wsapi.Store', {
+            model: 'Project',
+            fetch: ['Name', 'State', 'Parent', 'Children'],
+            autoLoad: true,
+            context: {
+                workspace: that.getContext().getWorkspace()._Ref,
+                projectScopeUp: false,
+                projectScopeDown: true
+            },
+            limit: Infinity,
+            filters:[{
+                property:'State',
+                operator: '=',
+                value: 'Open'
+            }],
+            sorters: [{
+                property: 'Name',
+                direction: 'ASC'
+            }],
+            listeners: {
+                load: function(projectStore, data, success){
+                    //initiatilinzing the list containing the required and all projects.
+                    this.requiredProjectsList = [];
+                    this.allProjectsColl = data;
+                    
+                    //identifying the selected project and constructing its reference.
+                    var selectedProj = this.getContext().getProject();
+                    var selectedProjRef = '/project/' + selectedProj.ObjectID;
+                        
+                    //registering the selected project reference.
+                    this.requiredProjectsList.push(selectedProjRef);
+                        
+                    //identifying whether selected project has any children.
+                    var selectedProjChildren = selectedProj.Children;
+                    if(selectedProjChildren && selectedProjChildren.Count > 0){
+                        this._loadAllChildProjectsFromParent(selectedProjRef);
+                    }
+                        
+                    //creating the milestone Store Filter.
+                    this._createMilestoneStoreFilter();
+                             
+                    //creating Milestone store.
+                    this._createMilestoneStore();
+                        
+                    Ext.getBody().unmask();
+                },
+                scope: this
+            }
+         });
+    },
+    
+    _loadAllChildProjectsFromParent: function(parentProjRef){
+        var that = this;
         
+        Ext.Array.each(this.allProjectsColl, function(thisProject) {
+            //identifying current project is child of the Project with reference..
+            if(thisProject.get('Parent') && thisProject.get('Parent')._ref == parentProjRef){
+                that.requiredProjectsList.push(thisProject.get('_ref'));
+                
+                //identifying whether the project as any further children.
+                var projChildren = thisProject.get('Children');
+                if(projChildren && projChildren.Count > 0){
+                    that._loadAllChildProjectsFromParent(thisProject.get('_ref'));
+                }
+            }
+        });
+    },
+    
+    _createMilestoneStoreFilter: function(){
+         this.projectMilestoneFilter = Ext.create('Rally.data.wsapi.Filter', {
+                            property: 'TargetProject',
+                            operator: '=',
+                            value : this.requiredProjectsList[0]
+                        });
+
+        for(i=1; i<this.requiredProjectsList.length; i++){
+            this.projectMilestoneFilter = this.projectMilestoneFilter.or(Ext.create('Rally.data.wsapi.Filter', {
+                                    property: 'TargetProject',
+                                    operator: '=',
+                                    value : this.requiredProjectsList[i]
+                                }));
+        }
+        
+        this.projectMilestoneFilter = this.projectMilestoneFilter.and(Ext.create('Rally.data.wsapi.Filter', {
+                                    property: 'TargetDate',
+                                    operator: '>=',
+                                    value: 'today'
+                                }));
+        
+        //only apply filtering on the notes field if configured
+        if (this.getSetting('notesFilter')) {
+            this.projectMilestoneFilter = this.projectMilestoneFilter.and(Ext.create('Rally.data.wsapi.Filter', {
+                                    property: 'Notes',
+                                    operator: 'contains',
+                                    value: this.getSetting('notesFilter')
+                                }));
+        }
+    },
+                    
+    _createMilestoneStore: function(){
+        var that = this;
         Ext.create('Rally.data.wsapi.Store', {
             model: 'milestone',
             autoLoad: true,
-            filters: this._getMilestoneFilters(),
+            filters: that.projectMilestoneFilter ,
             sorters: [
                 {
                     property: 'TargetDate',
@@ -38,29 +144,6 @@ Ext.define('CustomApp', {
                 scope: this
             }
         });
-    },
-    
-    _getMilestoneFilters: function() {
-        var filters = [
-            {
-                    property: 'TargetDate',
-                    operator: '>=',
-                    value: 'today'
-            }   
-        ];
-        
-        //only apply filtering on the notes field if configured
-        if (this.getSetting('notesFilter')) {
-            filters.push(
-                {
-                    property: 'Notes',
-                    operator: 'contains',
-                    value: this.getSetting('notesFilter')
-                }
-            );
-        }
-        
-        return filters;
     },
                     
     _onStoreBuilt: function(store) {
