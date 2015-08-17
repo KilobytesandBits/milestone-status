@@ -8,6 +8,11 @@ Ext.define('CustomApp', {
                 name: 'notesFilter',
                 xtype: 'rallytextfield',
                 fieldLabel: 'Notes Filter'    
+            },
+            {
+                name: 'showNumberOfMonths',
+                xtype: 'rallynumberfield',
+                fieldLabel: 'Date Range (months)'
             }
         ];
     },
@@ -120,6 +125,17 @@ Ext.define('CustomApp', {
                                     operator: 'contains',
                                     value: this.getSetting('notesFilter')
                                 }));
+        }
+        
+        //only filter on date range if configured
+        if (this.getSetting('showNumberOfMonths') && this.getSetting('showNumberOfMonths') > 0) {
+            var endDate = Rally.util.DateTime.add(new Date(), "month", this.getSetting('showNumberOfMonths'));
+            
+            this.projectMilestoneFilter = this.projectMilestoneFilter.and(Ext.create('Rally.data.wsapi.Filter', {
+                property: 'TargetDate',
+                operator: '<=',
+                value: endDate
+            }));
         }
     },
                     
