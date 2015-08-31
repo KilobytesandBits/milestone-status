@@ -106,7 +106,7 @@ Ext.define('CustomApp', {
         });
     },
     
-   _createMilestoneStoreFilter: function(){
+    _createMilestoneStoreFilter: function(){
         
        this.projectMilestoneFilter =  Ext.create('Rally.data.wsapi.Filter', {
                                     property: 'TargetDate',
@@ -144,7 +144,7 @@ Ext.define('CustomApp', {
             }));
         }
     },
-                    
+    
     _createMilestoneStore: function() {
         var that = this;
         
@@ -173,28 +173,80 @@ Ext.define('CustomApp', {
         
     },
     
-    _filterMileStones: function(myData) {
+    _onStoreBuilt: function(store) {
+        var modelNames = ['milestone'],
+        context = this.getContext();
         var that = this;
-        //Filter out milestone will be stored here
-        var filteredMilestonesArr = [];
-        Ext.each(myData, function(data, index) {
-            if(that.getSetting('includeGlobalMilestones') && data.data.TargetProject === null){
-                filteredMilestonesArr.push(data);
-            }
-            else if(data.data.TargetProject !== null && data.data.TargetProject !== "" && (that.requiredProjectsList.indexOf(data.data.TargetProject.ObjectID) > -1)){
-              filteredMilestonesArr.push(data);
-            }
+        this.add({
+            xtype: 'rallygridboard',
+            context: context,
+            modelNames: modelNames,
+            toggleState: 'grid',
+            stateful: false,
+            plugins: [
+                {
+                    ptype: 'rallygridboardactionsmenu',
+                    menuItems: [
+                        {
+                            text: 'Export...',
+                            handler: function() {
+                                window.location = Rally.ui.grid.GridCsvExport.buildCsvExportUrl(
+                                    this.down('rallygridboard').getGridOrBoard());
+                            },
+                            scope: this
+                        }
+                    ],
+                    buttonConfig: {
+                        iconCls: 'icon-export'
+                    }
+                }
+            ],
+            gridConfig: {
+                store: store,
+                enableBulkEdit: false,
+                enableEditing: false,
+                shouldShowRowActionsColumn: false,
+                enableColumnMove: true,
+                columnCfgs: [
+                    {
+                        text:'Name', 
+                        dataIndex: 'Name',
+                        width: 500,
+                        resizeable: true,
+                        renderer: function(value,style,item,rowIndex) {
+                            return Ext.String.format("<a target='_top' href='{1}'>{0}</a>", value, Rally.nav.Manager.getDetailUrl(item));
+                        }
+                    },
+                    {
+                        text: 'Value Stream',
+                        dataIndex: 'Notes',
+                        width: 100,
+                        resizeable: true,
+                        renderer: function(value, style, item, rowIndex) {
+                            if (value) {
+                                return that._getValueStreamFromRecord(item);    
+                            }
+                            else {
+                                return '';
+                            }
+                        }
+                    },
+                    {
+                        text: 'Target Date', 
+                        dataIndex: 'TargetDate',
+                        width: 100,
+                        renderer: function(value){
+                            if(value)
+                                return Rally.util.DateTime.format(value, 'M Y');
+                        }
+                    },
+                    'DisplayColor',
+                    'Notes'
+                ]
+            },
+            features: ['grouping', 'groupingsummary'],
+            height: this.getHeight()
         });
-        console.log("Filtered Milestone length : " + filteredMilestonesArr.length);
-        
-        //this._organiseMilestoneBasedOnValuestream(filteredMilestonesArr);
-        
-        var milestoneStore = Ext.create('Rally.data.custom.Store', {
-            model: 'milestone',
-            data: filteredMilestonesArr
-        });
-        
-        this._onStoreBuilt(milestoneStore);
     },
     
     //TODO: add other grouping options
@@ -209,14 +261,18 @@ Ext.define('CustomApp', {
     //value stream is currently stored in notes (i.e. "valuestream:value")
     //this will change once we can create custom fields for milestones
     //TODO: find a more efficient way to do this
-    _getValueStream: function(record) {
+    _getValueStreamFromRecord: function(record) {
         var notes = record.get('Notes');
+
+        return this._getValueStream(notes);
+    },
     
+    _getValueStream: function(notes) {
         //return an empty string if ther are no notes
         if (!notes || notes.length <= 0) {
             return '';
         }
-            
+        
         //find the value stream within Notes
         var indexForValueStream = notes.indexOf('valuestream:');
         
@@ -230,56 +286,7 @@ Ext.define('CustomApp', {
         var indexForEndOfValueStream = valueStreamText.indexOf('<');
             
         var valueStream = valueStreamText.slice((valueStreamText.indexOf(':') + 1), indexForEndOfValueStream);
-            
-        return valueStream;
-    },
-                    
-    _onStoreBuilt: function(store) {
-        console.log('Filtered milestone store: ', store);
-        this.add({
-            xtype: 'rallygrid',
-            columnCfgs: [
-                {
-                    text:'Name', 
-                    dataIndex:"Name",
-                    width: 500,
-                    resizeable: true,
-                    renderer: function(value,style,item,rowIndex) {
-                        return Ext.String.format("<a target='_top' href='{1}'>{0}</a>", value, Rally.nav.Manager.getDetailUrl(item));
-                    }
-                },
-                {
-                    text: 'Project', 
-                    dataIndex: 'TargetProject',
-                    renderer: function(value) {
-                        if (value && value._refObjectName) {
-                            return value._refObjectName;
-                        }
-                        else {
-                            return '';
-                        }
-                    }
-                },
-                {
-                    text: 'Target Date', 
-                    dataIndex: 'TargetDate',
-                    width: 100,
-                    renderer: function(value){
-                        if(value)
-                            return Rally.util.DateTime.format(value, 'M Y');
-                    }
-                },
-                'DisplayColor',
-                'Notes'
-            ],
-            features: [{
-                ftype: 'groupingsummary',
-                groupHeaderTpl: '{name}'
-            }],
-            context: this.getContext(),
-            enableEditing: false,
-            showRowActionsColumn: false,
-            store: store
-        });
+        
+        return valueStream;    
     }
 });
