@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MilestoneStatusApp</title>
+
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",getSettingsFields:function(){return[{name:"notesFilter",xtype:"rallytextfield",fieldLabel:"Notes Filter"},{name:"showNumberOfMonths",xtype:"rallynumberfield",fieldLabel:"Date Range (months)"},{name:"groupByValueStream",xtype:"rallycheckboxfield",fieldLabel:"",boxLabel:"Group by Value Stream"}]},launch:function(){this._getAllChildProjectsForCurrentProject(this.project)},_getAllChildProjectsForCurrentProject:function(currProject){Ext.getBody().mask("Loading..."),this.allProjectsList=[];var that=this,projectStore=Ext.create("Rally.data.wsapi.Store",{model:"Project",fetch:["Name","State","Parent","Children"],autoLoad:!0,compact:!1,context:{workspace:that.getContext().getWorkspace()._Ref,projectScopeUp:!1,projectScopeDown:!0},limit:1/0,filters:[{property:"State",operator:"=",value:"Open"}],sorters:[{property:"Name",direction:"ASC"}],listeners:{load:function(projectStore,data,success){this.requiredProjectsList=[],this.allProjectsColl=data;var selectedProj=this.getContext().getProject(),selectedProjRef="/project/"+selectedProj.ObjectID;this.requiredProjectsList.push(selectedProj.ObjectID);var selectedProjChildren=selectedProj.Children;selectedProjChildren&&selectedProjChildren.Count>0&&this._loadAllChildProjectsFromParent(selectedProjRef),this._createMilestoneStoreFilter(),this._createMilestoneStore(),Ext.getBody().unmask()},scope:this}})},_loadAllChildProjectsFromParent:function(parentProjRef){var that=this;Ext.Array.each(this.allProjectsColl,function(thisProject){if(thisProject.get("Parent")&&null!==thisProject.get("Parent")._ref&&thisProject.get("Parent")._ref==parentProjRef){that.requiredProjectsList.push(thisProject.data.ObjectID);var projChildren=thisProject.get("Children");projChildren&&projChildren.Count>0&&that._loadAllChildProjectsFromParent(thisProject.get("_ref"))}})},_createMilestoneStoreFilter:function(){if(this.projectMilestoneFilter=Ext.create("Rally.data.wsapi.Filter",{property:"TargetDate",operator:">=",value:"today"}),this.getSetting("includeGlobalMilestones")&&(this.projectMilestoneFilter=this.projectMilestoneFilter.or(Ext.create("Rally.data.wsapi.Filter",{property:"TargetProject",operator:"=",value:"NULL"}))),this.getSetting("notesFilter")&&(this.projectMilestoneFilter=this.projectMilestoneFilter.and(Ext.create("Rally.data.wsapi.Filter",{property:"Notes",operator:"contains",value:this.getSetting("notesFilter")}))),this.getSetting("showNumberOfMonths")&&this.getSetting("showNumberOfMonths")>0){var endDate=Rally.util.DateTime.add(new Date,"month",this.getSetting("showNumberOfMonths"));this.projectMilestoneFilter=this.projectMilestoneFilter.and(Ext.create("Rally.data.wsapi.Filter",{property:"TargetDate",operator:"<=",value:endDate}))}},_createMilestoneStore:function(){var that=this,myStore=Ext.create("Rally.data.wsapi.Store",{model:"milestone",autoLoad:!0,compact:!1,listeners:{load:function(store,data,success){this._filterMileStones(data)},scope:this},filters:this.projectMilestoneFilter,sorters:[{property:"TargetProject",direction:"ASC"},{property:"TargetDate",direction:"ASC"}]})},_filterMileStones:function(myData){var that=this,filteredMilestonesArr=[];Ext.each(myData,function(data,index){that.getSetting("includeGlobalMilestones")&&null===data.data.TargetProject?filteredMilestonesArr.push(data):null!==data.data.TargetProject&&""!==data.data.TargetProject&&that.requiredProjectsList.indexOf(data.data.TargetProject.ObjectID)>-1&&filteredMilestonesArr.push(data)}),console.log("Filtered Milestone length : "+filteredMilestonesArr.length);var milestoneStore=Ext.create("Rally.data.custom.Store",{model:"milestone",data:filteredMilestonesArr});this._onStoreBuilt(milestoneStore)},_getGroupByField:function(){return this.getSetting("groupByValueStream")?"Notes":""},_getValueStream:function(record){var notes=record.get("Notes");if(!notes||0>=notes.length)return"";var indexForValueStream=notes.indexOf("valuestream:");if(-1===indexForEndOfValueStream)return"";var valueStreamText=notes.slice(indexForValueStream,notes.length),indexForEndOfValueStream=valueStreamText.indexOf("<"),valueStream=valueStreamText.slice(valueStreamText.indexOf(":")+1,indexForEndOfValueStream);return valueStream},_onStoreBuilt:function(store){console.log("Filtered milestone store: ",store),this.add({xtype:"rallygrid",columnCfgs:[{text:"Name",dataIndex:"Name",width:500,resizeable:!0,renderer:function(value,style,item,rowIndex){return Ext.String.format("<a target='_top' href='{1}'>{0}</a>",value,Rally.nav.Manager.getDetailUrl(item))}},{text:"Project",dataIndex:"TargetProject",renderer:function(value){return value&&value._refObjectName?value._refObjectName:""}},{text:"Target Date",dataIndex:"TargetDate",width:100,renderer:function(value){return value?Rally.util.DateTime.format(value,"M Y"):void 0}},"DisplayColor","Notes"],features:[{ftype:"groupingsummary",groupHeaderTpl:"{name}"}],context:this.getContext(),enableEditing:!1,showRowActionsColumn:!1,store:store})}});
+
+            Rally.launchApp('CustomApp', {
+                name:"MilestoneStatusApp",
+	            parentRepos:""
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body>
+</body>
+</html>

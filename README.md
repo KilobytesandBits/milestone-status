@@ -1,4 +1,4 @@
-Milestone Status App
+MilestoneStatusApp
 =========================
 
 ## Overview
