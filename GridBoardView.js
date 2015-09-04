@@ -148,17 +148,20 @@ Ext.define('CustomApp', {
     _createMilestoneStore: function() {
         var that = this;
         
-        var myStore = Ext.create("Rally.data.wsapi.Store", {
-            model: 'milestone',
+        Ext.create('Rally.data.wsapi.TreeStoreBuilder').build({
+            models: ['milestone'],
             autoLoad: true,
-            compact: false,
-            listeners: {
-                load: function(store, data, success) {
-                    this._filterMileStones(data);
-                },
-                scope: this
+            enableHierarchy: false,
+            filters: this.projectMilestoneFilter,
+            //TODO: allow grouping by fields or Category (which is temporarily stored in Notes)
+            groupField: that._getGroupByField(),
+            //Prepare the string to be grouped by
+            getGroupString: function(record) {
+                
+                if (that.getSetting('groupByValueStream')) {
+                    return that._getValueStreamFromRecord(record);
+                }
             },
-            filters : this.projectMilestoneFilter,
             sorters: [
                 {
                     property: 'TargetProject',
@@ -169,11 +172,15 @@ Ext.define('CustomApp', {
                     direction: 'ASC'
                 }
             ]
-        });
-        
+        }).then({
+            success: this._onStoreBuilt,
+            scope: this
+        });   
     },
     
     _onStoreBuilt: function(store) {
+        //console.log('milestone store records: ', store.getRecords());
+        
         var modelNames = ['milestone'],
         context = this.getContext();
         var that = this;

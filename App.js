@@ -1,3 +1,21 @@
+var types = Ext.data.Types;
+Ext.define('MilestoneTreeModel', {
+	extend: 'Ext.data.TreeModel',
+	fields: [
+                {name: 'FormattedID', mapping: 'FormattedID', type: types.STRING},
+                {name: 'Name', mapping: 'Name', type: types.STRING},
+                {name: 'TargetDate', mapping: 'AcceptedDate', type: types.DATE },
+                {name: 'TargetProject', mapping: 'TargetProject', type: types.OBJECT},
+                {name: 'ValueStream', mapping: 'ValueStream', type: types.STRING},
+                {name: 'Visibility', mapping: 'Visibility', type: types.STRING},
+                {name: 'Status', mapping: 'Status', type: types.STRING},
+                {name: 'DisplayColor', mapping: 'DisplayColor', type: types.STRING},
+                {name: 'Notes', mapping: 'Notes', type: types.STRING},
+                {name: '_ref', mapping: '_ref', type: types.STRING}
+            ],
+    hasMany: {model: 'FeatureTreeModel', name:'features', associationKey: 'features'}
+});
+
 Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
@@ -19,13 +37,13 @@ Ext.define('CustomApp', {
                 xtype: 'rallycheckboxfield',
                 fieldLabel: '',
                 boxLabel: 'Include global milestones'
-            },
-            {
-                name: 'groupByValueStream',
-                xtype: 'rallycheckboxfield',
-                fieldLabel: '',
-                boxLabel: 'Group by Value Stream'
             }
+            // {
+            //     name: 'groupByValueStream',
+            //     xtype: 'rallycheckboxfield',
+            //     fieldLabel: '',
+            //     boxLabel: 'Group by Value Stream'
+            // }
         ];
     },
     
@@ -106,7 +124,7 @@ Ext.define('CustomApp', {
         });
     },
     
-   _createMilestoneStoreFilter: function(){
+    _createMilestoneStoreFilter: function(){
         
        this.projectMilestoneFilter =  Ext.create('Rally.data.wsapi.Filter', {
                                     property: 'TargetDate',
@@ -144,7 +162,7 @@ Ext.define('CustomApp', {
             }));
         }
     },
-                    
+    
     _createMilestoneStore: function() {
         var that = this;
         
@@ -187,26 +205,218 @@ Ext.define('CustomApp', {
         });
         console.log("Filtered Milestone length : " + filteredMilestonesArr.length);
         
-        //this._organiseMilestoneBasedOnValuestream(filteredMilestonesArr);
+        this._organiseMilestoneBasedOnValuestream(filteredMilestonesArr);
         
-        var milestoneStore = Ext.create('Rally.data.custom.Store', {
-            model: 'milestone',
-            data: filteredMilestonesArr
+    },
+    
+    _organiseMilestoneBasedOnValuestream: function(filteredMilestonesArr){
+        this.valueStreamMilestoneColl = [];
+        this.valueStreamColl = [];
+        var nonVSCount = 0;
+        var that = this;
+        
+        Ext.Array.each(filteredMilestonesArr, function(thisData){
+            var valuestream = that._getValueStream(thisData);
+            
+            if(valuestream !== ''){
+                if(that.valueStreamColl.length === 0){
+                    that.valueStreamColl.push(valuestream);
+                }
+                else if(that.valueStreamColl.length > 0 && that.valueStreamColl.indexOf(valuestream) === -1){
+                    that.valueStreamColl.push(valuestream);
+                }
+            }
+            else{
+                nonVSCount++;
+            }
+        });
+        this.valueStreamColl.sort();
+        if(nonVSCount > 0)
+            this.valueStreamColl.push('NA');
+        
+        console.log('ValueStream collection: ', this.valueStreamColl);
+        
+        Ext.Array.each(this.valueStreamColl, function(valuestream) {
+            var milestoneColl = that._getAllAssociatedMilestones(valuestream, filteredMilestonesArr);
+            
+            that.valueStreamMilestoneColl.push({
+                key: valuestream,
+                value: milestoneColl
+            });
         });
         
-        this._onStoreBuilt(milestoneStore);
+        console.log('ValueStream Milestone collection: ', this.valueStreamMilestoneColl);
+        
+        this._createValueStreamMilestonesTreeNode();
     },
     
-    //TODO: add other grouping options
-    _getGroupByField: function() {
-        if (this.getSetting('groupByValueStream')) {
-            return 'Notes';
-        }
-        else
-            return '';
+    _createValueStreamMilestonesTreeNode: function(){
+        
+        var valueStreamRootNode = Ext.create('MilestoneTreeModel',{
+                    Name: 'ValueStream Root',
+                    text: 'ValueStream Root',
+                    root: true,
+                    expandable: true,
+                    expanded: true
+                });
+                
+        this._createValueStreamNodesAlongWithAssociatedChildMilestoneNodes(valueStreamRootNode);
+        console.log('Valuestream Milestone Tree Node: ', valueStreamRootNode);
+        
+        this._createValueStreamMilestoneGrid(valueStreamRootNode);
+        
     },
     
-    //value stream is currently stored in notes (i.e. "valuestream:value")
+    _createValueStreamMilestoneGrid: function(valueStreamRootNode){
+        
+       var milestoneValueStreamTreeStore = Ext.create('Ext.data.TreeStore', {
+            model: 'MilestoneTreeModel',
+            root: valueStreamRootNode
+        }); 
+        
+       var valuestreamMilestoneTreePanel = Ext.create('Ext.tree.Panel', {
+            store: milestoneValueStreamTreeStore,
+            useArrows: true,
+            rowLines: true,
+            displayField: 'Name',
+            rootVisible: false,
+            width: '100%',
+            height: 'auto', // Extra scroll for individual sections:
+            viewConfig: {
+                getRowClass: function(record, index) {
+                    var nameRecord = Ext.String.format("{0}", record.get('Name'));
+                    if(nameRecord && nameRecord.search('valuestream:') === -1){
+                        return 'row-child';
+                    }
+                    return 'row-parent';
+                }
+            },
+            columns: [{
+                          xtype: 'treecolumn',
+                          text: 'Name',
+                          dataIndex: 'Name',
+                          resizeable: true,
+                          flex: 3,
+                          minWidth:200,
+                          //width : 300,
+                          renderer: function(value,style,item,rowIndex) {
+                                var link = Ext.String.format("{0}", value);
+                                if(link.search('valuestream:') === -1){
+                                    var ref = item.get('_ref');
+                                    link = Ext.String.format("<a target='_top' href='{1}'><b>{0}</b></a>", value, Rally.nav.Manager.getDetailUrl(ref));
+                                }
+                                else{
+                                    var onlyName = link.replace('valuestream:', '');
+                                    link= Ext.String.format("<b>{0}</b>", onlyName);
+                                }
+                                    
+                                return link;
+                            }
+                    },
+                    {
+                        text: 'Project', 
+                        dataIndex: 'TargetProject',
+                        flex: 2,
+                        //width : 200,
+                        hidden: true
+                    },
+                    {
+                        text: 'Target Date', 
+                        dataIndex: 'TargetDate',
+                        flex: 1,
+                        //width : 100,
+                        renderer: function(value){
+                            if(value)
+                                return Rally.util.DateTime.format(value, 'M Y');
+                        }
+                    },
+                    {
+                        text: 'Color',
+                        dataIndex: 'DisplayColor',
+                        flex: 1,
+                        //width : 100,
+                        renderer: function(value){
+                            if(value){ 
+                                var colorHtml = Ext.String.format("<div class= 'color-box' style= 'background-color: {0};'></div>", value);
+                                return colorHtml;
+                            }
+                        }
+                    },
+                    {
+                        text: 'Notes',
+                        dataIndex: 'Notes',
+                        flex: 5
+                        //width : 700
+                    }
+                ]
+        });
+        
+        this.add(valuestreamMilestoneTreePanel);
+    },
+    
+    _createValueStreamNodesAlongWithAssociatedChildMilestoneNodes: function(valustreamRootNode){
+        var that = this;
+        Ext.Array.each(this.valueStreamMilestoneColl, function(thisData) {
+            var valueStreamNode = that._createValueStreamNode(thisData.key);
+            
+            Ext.Array.each(thisData.value, function(thisMilestoneData) {
+                var milestoneNode = that._createMilestoneNode(thisMilestoneData);
+                valueStreamNode.appendChild(milestoneNode);
+            });
+            
+            valustreamRootNode.appendChild(valueStreamNode);
+        });
+    },
+    
+    _createValueStreamNode: function(valuestreamData){
+        var valueStreamLable = 'valuestream: ' + valuestreamData;
+        var valustreamTreeNode = Ext.create('MilestoneTreeModel',{
+                    Name: valueStreamLable,
+                    leaf: false,
+                    expandable: true,
+                    expanded: true,
+                    iconCls :'no-icon'
+                });
+                
+        return  valustreamTreeNode;
+    },
+    
+    _createMilestoneNode: function(milestoneData){
+        var targetProjectName = milestoneData.get('TargetProject') !== null ?  milestoneData.get('TargetProject')._refObjectName : 'Global';
+        
+        var milestoneTreeNode = Ext.create('MilestoneTreeModel',{
+            FormattedID: milestoneData.get('FormattedID'),
+            Name: milestoneData.get('Name'),
+            TargetDate: milestoneData.get('TargetDate'),
+            TargetProject: targetProjectName,
+            DisplayColor: milestoneData.get('DisplayColor'),
+            Notes: milestoneData.get('Notes'),
+            _ref: milestoneData.get('_ref'),
+            leaf: true,
+            expandable: false,
+            expanded: false,
+            iconCls :'no-icon'
+        });
+        
+        return milestoneTreeNode;
+    },
+    
+    _getAllAssociatedMilestones: function(valuestream, milestoneStoreData){
+        var milestoneColl = [];
+        var that = this;
+        Ext.Array.each(milestoneStoreData, function(milestone) {
+            var vsRecord = that._getValueStream(milestone);
+            vsRecord = vsRecord !== '' ? vsRecord : 'NA';
+            
+            if(vsRecord === valuestream){
+                milestoneColl.push(milestone);
+            }
+        });
+        
+        return milestoneColl;
+    },
+    
+   //value stream is currently stored in notes (i.e. "valuestream:value")
     //this will change once we can create custom fields for milestones
     //TODO: find a more efficient way to do this
     _getValueStream: function(record) {
@@ -232,54 +442,5 @@ Ext.define('CustomApp', {
         var valueStream = valueStreamText.slice((valueStreamText.indexOf(':') + 1), indexForEndOfValueStream);
             
         return valueStream;
-    },
-                    
-    _onStoreBuilt: function(store) {
-        console.log('Filtered milestone store: ', store);
-        this.add({
-            xtype: 'rallygrid',
-            columnCfgs: [
-                {
-                    text:'Name', 
-                    dataIndex:"Name",
-                    width: 500,
-                    resizeable: true,
-                    renderer: function(value,style,item,rowIndex) {
-                        return Ext.String.format("<a target='_top' href='{1}'>{0}</a>", value, Rally.nav.Manager.getDetailUrl(item));
-                    }
-                },
-                {
-                    text: 'Project', 
-                    dataIndex: 'TargetProject',
-                    renderer: function(value) {
-                        if (value && value._refObjectName) {
-                            return value._refObjectName;
-                        }
-                        else {
-                            return '';
-                        }
-                    }
-                },
-                {
-                    text: 'Target Date', 
-                    dataIndex: 'TargetDate',
-                    width: 100,
-                    renderer: function(value){
-                        if(value)
-                            return Rally.util.DateTime.format(value, 'M Y');
-                    }
-                },
-                'DisplayColor',
-                'Notes'
-            ],
-            features: [{
-                ftype: 'groupingsummary',
-                groupHeaderTpl: '{name}'
-            }],
-            context: this.getContext(),
-            enableEditing: false,
-            showRowActionsColumn: false,
-            store: store
-        });
     }
 });
