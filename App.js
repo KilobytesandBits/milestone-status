@@ -331,7 +331,7 @@ Ext.define('CustomApp', {
                         }
                     },
                     {
-                        text: 'Color',
+                        text: 'Status',
                         dataIndex: 'DisplayColor',
                         flex: 1,
                         //width : 100,
