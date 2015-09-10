@@ -23,27 +23,22 @@ Ext.define('CustomApp', {
     getSettingsFields: function() {
         return [
             {
-                name: 'notesFilter',
-                xtype: 'rallytextfield',
-                fieldLabel: 'Notes Filter'    
-            },
-            {
-                name: 'showNumberOfMonths',
-                xtype: 'rallynumberfield',
-                fieldLabel: 'Date Range (months)'
+                name: 'executiveVisibilityOnly',
+                xtype: 'rallycheckboxfield',
+                fieldLabel: '',
+                boxLabel: 'Only show Milestones with Executive Visibility'    
             },
             {
                 name: 'includeGlobalMilestones',
                 xtype: 'rallycheckboxfield',
                 fieldLabel: '',
                 boxLabel: 'Include global milestones'
+            },
+            {
+                name: 'showNumberOfMonths',
+                xtype: 'rallynumberfield',
+                fieldLabel: 'Date Range (months)'
             }
-            // {
-            //     name: 'groupByValueStream',
-            //     xtype: 'rallycheckboxfield',
-            //     fieldLabel: '',
-            //     boxLabel: 'Group by Value Stream'
-            // }
         ];
     },
     
@@ -108,8 +103,9 @@ Ext.define('CustomApp', {
          });
     },
     
-    _loadAllChildProjectsFromParent: function(parentProjRef){
+    _loadAllChildProjectsFromParent: function(parentProjRef) {
         var that = this;
+        
         Ext.Array.each(this.allProjectsColl, function(thisProject) {
             //identifying current project is child of the Project with reference..
             if(thisProject.get('Parent') && thisProject.get('Parent')._ref !== null && thisProject.get('Parent')._ref == parentProjRef){
@@ -125,29 +121,18 @@ Ext.define('CustomApp', {
     },
     
     _createMilestoneStoreFilter: function(){
-        
-       this.projectMilestoneFilter =  Ext.create('Rally.data.wsapi.Filter', {
+        this.projectMilestoneFilter =  Ext.create('Rally.data.wsapi.Filter', {
                                     property: 'TargetDate',
                                     operator: '>=',
                                     value: 'today'
                                 });
         
-        //only include milestones shared for all projects if the setting is enabled
-        if (this.getSetting('includeGlobalMilestones')) {        
-            this.projectMilestoneFilter = this.projectMilestoneFilter.or(Ext.create('Rally.data.wsapi.Filter', {
-                property: 'TargetProject',
-                operator: '=',
-                value : 'NULL'
-            }));
-        }
-        
-        
         //only apply filtering on the notes field if configured
-        if (this.getSetting('notesFilter')) {
+        if (this.getSetting('executiveVisibilityOnly')) {
             this.projectMilestoneFilter = this.projectMilestoneFilter.and(Ext.create('Rally.data.wsapi.Filter', {
-                                    property: 'Notes',
-                                    operator: 'contains',
-                                    value: this.getSetting('notesFilter')
+                                    property: 'c_ExecutiveVisibility',
+                                    operator: '=',
+                                    value: this.getSetting('executiveVisibilityOnly')
                                 }));
         }
         
@@ -164,9 +149,8 @@ Ext.define('CustomApp', {
     },
     
     _createMilestoneStore: function() {
-        var that = this;
-        
-        var myStore = Ext.create("Rally.data.wsapi.Store", {
+
+        Ext.create("Rally.data.wsapi.Store", {
             model: 'milestone',
             autoLoad: true,
             compact: false,
@@ -179,34 +163,37 @@ Ext.define('CustomApp', {
             filters : this.projectMilestoneFilter,
             sorters: [
                 {
-                    property: 'TargetProject',
-                    direction: 'ASC'
+                    property: 'c_ValueStream',
+                    direaction: 'ASC'
                 },
                 {
                     property: 'TargetDate',
                     direction: 'ASC'
                 }
             ]
-        });
-        
+        }); 
     },
     
-    _filterMileStones: function(myData) {
+    //Only include milestones based on the current project and it's children
+    _filterMileStones: function(milestones) {
         var that = this;
+        
         //Filter out milestone will be stored here
         var filteredMilestonesArr = [];
-        Ext.each(myData, function(data, index) {
-            if(that.getSetting('includeGlobalMilestones') && data.data.TargetProject === null){
-                filteredMilestonesArr.push(data);
+        
+        Ext.each(milestones, function(milestone, index) {
+            
+            if (milestone.data.TargetProject !== null && milestone.data.TargetProject !== "" && (that.requiredProjectsList.indexOf(milestone.data.TargetProject.ObjectID) > -1)) {
+                filteredMilestonesArr.push(milestone);
             }
-            else if(data.data.TargetProject !== null && data.data.TargetProject !== "" && (that.requiredProjectsList.indexOf(data.data.TargetProject.ObjectID) > -1)){
-              filteredMilestonesArr.push(data);
+            
+            //If including global milestones, get milestones where TargetProject is not specific as well
+            if (that.getSetting('includeGlobalMilestones') && milestone.data.TargetProject === null){
+                filteredMilestonesArr.push(milestone);
             }
         });
-        console.log("Filtered Milestone length : " + filteredMilestonesArr.length);
         
         this._organiseMilestoneBasedOnValuestream(filteredMilestonesArr);
-        
     },
     
     _organiseMilestoneBasedOnValuestream: function(filteredMilestonesArr){
@@ -216,7 +203,7 @@ Ext.define('CustomApp', {
         var that = this;
         
         Ext.Array.each(filteredMilestonesArr, function(thisData){
-            var valuestream = that._getValueStream(thisData);
+            var valuestream = thisData.get('c_ValueStream');
             
             if(valuestream !== ''){
                 if(that.valueStreamColl.length === 0){
@@ -230,11 +217,12 @@ Ext.define('CustomApp', {
                 nonVSCount++;
             }
         });
-        this.valueStreamColl.sort();
-        if(nonVSCount > 0)
-            this.valueStreamColl.push('NA');
         
-        console.log('ValueStream collection: ', this.valueStreamColl);
+        this.valueStreamColl.sort();
+        
+        if(nonVSCount > 0) {
+            this.valueStreamColl.push('N/A');
+        }
         
         Ext.Array.each(this.valueStreamColl, function(valuestream) {
             var milestoneColl = that._getAllAssociatedMilestones(valuestream, filteredMilestonesArr);
@@ -244,8 +232,6 @@ Ext.define('CustomApp', {
                 value: milestoneColl
             });
         });
-        
-        console.log('ValueStream Milestone collection: ', this.valueStreamMilestoneColl);
         
         this._createValueStreamMilestonesTreeNode();
     },
@@ -261,7 +247,6 @@ Ext.define('CustomApp', {
                 });
                 
         this._createValueStreamNodesAlongWithAssociatedChildMilestoneNodes(valueStreamRootNode);
-        console.log('Valuestream Milestone Tree Node: ', valueStreamRootNode);
         
         this._createValueStreamMilestoneGrid(valueStreamRootNode);
         
@@ -317,14 +302,12 @@ Ext.define('CustomApp', {
                         text: 'Project', 
                         dataIndex: 'TargetProject',
                         flex: 2,
-                        //width : 200,
                         hidden: true
                     },
                     {
                         text: 'Target Date', 
                         dataIndex: 'TargetDate',
                         flex: 1,
-                        //width : 100,
                         renderer: function(value){
                             if(value)
                                 return Rally.util.DateTime.format(value, 'M Y');
@@ -334,7 +317,6 @@ Ext.define('CustomApp', {
                         text: 'Status',
                         dataIndex: 'DisplayColor',
                         flex: 1,
-                        //width : 100,
                         renderer: function(value){
                             if(value){ 
                                 var colorHtml = Ext.String.format("<div class= 'color-box' style= 'background-color: {0};'></div>", value);
@@ -346,7 +328,6 @@ Ext.define('CustomApp', {
                         text: 'Notes',
                         dataIndex: 'Notes',
                         flex: 5
-                        //width : 700
                     }
                 ]
         });
@@ -356,6 +337,7 @@ Ext.define('CustomApp', {
     
     _createValueStreamNodesAlongWithAssociatedChildMilestoneNodes: function(valustreamRootNode){
         var that = this;
+        
         Ext.Array.each(this.valueStreamMilestoneColl, function(thisData) {
             var valueStreamNode = that._createValueStreamNode(thisData.key);
             
@@ -404,8 +386,9 @@ Ext.define('CustomApp', {
     _getAllAssociatedMilestones: function(valuestream, milestoneStoreData){
         var milestoneColl = [];
         var that = this;
+        
         Ext.Array.each(milestoneStoreData, function(milestone) {
-            var vsRecord = that._getValueStream(milestone);
+            var vsRecord = milestone.get('c_ValueStream');
             vsRecord = vsRecord !== '' ? vsRecord : 'NA';
             
             if(vsRecord === valuestream){
@@ -414,33 +397,5 @@ Ext.define('CustomApp', {
         });
         
         return milestoneColl;
-    },
-    
-   //value stream is currently stored in notes (i.e. "valuestream:value")
-    //this will change once we can create custom fields for milestones
-    //TODO: find a more efficient way to do this
-    _getValueStream: function(record) {
-        var notes = record.get('Notes');
-    
-        //return an empty string if ther are no notes
-        if (!notes || notes.length <= 0) {
-            return '';
-        }
-            
-        //find the value stream within Notes
-        var indexForValueStream = notes.indexOf('valuestream:');
-        
-        if (indexForEndOfValueStream === -1) {
-            return '';
-        }
-        
-        var valueStreamText = notes.slice(indexForValueStream, notes.length);
-        
-        //there is no guarantee that the text will be within a <div>, so we can only check if we are either starting or ending an element
-        var indexForEndOfValueStream = valueStreamText.indexOf('<');
-            
-        var valueStream = valueStreamText.slice((valueStreamText.indexOf(':') + 1), indexForEndOfValueStream);
-            
-        return valueStream;
     }
 });
