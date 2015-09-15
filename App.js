@@ -96,7 +96,7 @@ Ext.define('CustomApp', {
                     //creating Milestone store.
                     this._createMilestoneStore();
                     
-                    Ext.getBody().unmask();
+                    
                 },
                 scope: this
             }
@@ -265,8 +265,8 @@ Ext.define('CustomApp', {
             rowLines: true,
             displayField: 'Name',
             rootVisible: false,
-            width: '100%',
-            height: 'auto', // Extra scroll for individual sections:
+            width: this.getWidth(true),
+            height: this.getHeight(true), // Extra scroll for individual sections:
             viewConfig: {
                 getRowClass: function(record, index) {
                     var nameRecord = Ext.String.format("{0}", record.get('Name'));
@@ -333,6 +333,8 @@ Ext.define('CustomApp', {
         });
         
         this.add(valuestreamMilestoneTreePanel);
+        
+        Ext.getBody().unmask();
     },
     
     _createValueStreamNodesAlongWithAssociatedChildMilestoneNodes: function(valustreamRootNode){
