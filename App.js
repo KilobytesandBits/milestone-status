@@ -205,7 +205,7 @@ Ext.define('CustomApp', {
         Ext.Array.each(filteredMilestonesArr, function(thisData){
             var valuestream = thisData.get('c_ValueStream');
             
-            if(valuestream !== ''){
+            if(valuestream !== null && valuestream !== ''){
                 if(that.valueStreamColl.length === 0){
                     that.valueStreamColl.push(valuestream);
                 }
@@ -391,7 +391,7 @@ Ext.define('CustomApp', {
         
         Ext.Array.each(milestoneStoreData, function(milestone) {
             var vsRecord = milestone.get('c_ValueStream');
-            vsRecord = vsRecord !== '' ? vsRecord : 'NA';
+            vsRecord = (vsRecord !== null && vsRecord !== '') ? vsRecord : 'N/A';
             
             if(vsRecord === valuestream){
                 milestoneColl.push(milestone);
