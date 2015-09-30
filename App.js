@@ -124,7 +124,7 @@ Ext.define('CustomApp', {
         this.projectMilestoneFilter =  Ext.create('Rally.data.wsapi.Filter', {
                                     property: 'TargetDate',
                                     operator: '>=',
-                                    value: 'today'
+                                    value: 'today-15'
                                 });
         
         //only apply filtering on the notes field if configured
@@ -309,8 +309,21 @@ Ext.define('CustomApp', {
                         dataIndex: 'TargetDate',
                         flex: 1,
                         renderer: function(value){
-                            if(value)
-                                return Rally.util.DateTime.format(value, 'M Y');
+                            if(value) {
+                                //format date field to only show month and year
+                                var formattedDate = Rally.util.DateTime.format(value, 'M Y');
+                                var formattedField;
+                                //change color for dates in the past
+                                if (value < new Date()) {
+                                    formattedField = Ext.String.format("<div style='color:grey'>{0}</div>", formattedDate);
+                                    return formattedField;
+                                }
+                                else {
+                                    formattedField = Ext.String.format("<div>{0}</div>", formattedDate);
+                                }
+                                
+                                return formattedField;
+                            }
                         }
                     },
                     {
