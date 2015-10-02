@@ -19,15 +19,22 @@ Ext.define('MilestoneTreeModel', {
 Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
-
+    
+    items: [
+        {
+            xtype:"container", 
+            itemId:"filterContainer", 
+            id:"filterContainer"
+        },
+        {
+            xtype:"container",
+            itemId:"gridContainer",
+            id:"gridContainer" 
+        }
+    ],
+    
     getSettingsFields: function() {
         return [
-            {
-                name: 'executiveVisibilityOnly',
-                xtype: 'rallycheckboxfield',
-                fieldLabel: '',
-                boxLabel: 'Only show Milestones with Executive Visibility'    
-            },
             {
                 name: 'includeGlobalMilestones',
                 xtype: 'rallycheckboxfield',
@@ -43,6 +50,24 @@ Ext.define('CustomApp', {
     },
     
     launch: function() {
+        
+        this.down('#filterContainer').add({
+            xtype: 'rallycheckboxfield',
+            id: 'executiveVisibilityCheckbox',
+            boxLabel: 'Show Executive Visibility Only',
+            labelWidth: 200,
+            padding: '10, 5, 10, 5',
+            checked: true,
+            listeners: {
+                change: this._onReady,
+                render: this._onReady,
+                scope: this
+            }
+        });
+    },
+    
+    _onReady: function() {
+        
         this._getAllChildProjectsForCurrentProject(this.project);
     },
     
@@ -128,11 +153,11 @@ Ext.define('CustomApp', {
                                 });
         
         //only apply filtering on the notes field if configured
-        if (this.getSetting('executiveVisibilityOnly')) {
+        if (this._getVisibilityFilter()) {
             this.projectMilestoneFilter = this.projectMilestoneFilter.and(Ext.create('Rally.data.wsapi.Filter', {
                                     property: 'c_ExecutiveVisibility',
                                     operator: '=',
-                                    value: this.getSetting('executiveVisibilityOnly')
+                                    value: this._getVisibilityFilter()
                                 }));
         }
         
@@ -253,6 +278,10 @@ Ext.define('CustomApp', {
     },
     
     _createValueStreamMilestoneGrid: function(valueStreamRootNode){
+        var milestonesTreePanel = Ext.getCmp('milestonesTreePanel');
+        
+        if (milestonesTreePanel)
+            milestonesTreePanel.destroy();
         
        var milestoneValueStreamTreeStore = Ext.create('Ext.data.TreeStore', {
             model: 'MilestoneTreeModel',
@@ -260,6 +289,8 @@ Ext.define('CustomApp', {
         }); 
         
        var valuestreamMilestoneTreePanel = Ext.create('Ext.tree.Panel', {
+           id: 'milestonesTreePanel',
+           itemId: 'milestonesTreePanel',
             store: milestoneValueStreamTreeStore,
             useArrows: true,
             rowLines: true,
@@ -345,7 +376,7 @@ Ext.define('CustomApp', {
                 ]
         });
         
-        this.add(valuestreamMilestoneTreePanel);
+        this.down('#gridContainer').add(valuestreamMilestoneTreePanel);
         
         Ext.getBody().unmask();
     },
@@ -412,5 +443,11 @@ Ext.define('CustomApp', {
         });
         
         return milestoneColl;
+    },
+    
+    _getVisibilityFilter: function() {
+        var visibilityCheckBox = Ext.getCmp('executiveVisibilityCheckbox');
+        return visibilityCheckBox.getValue();
+        //return true;
     }
 });
