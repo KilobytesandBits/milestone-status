@@ -4,6 +4,7 @@ Ext.define('MilestoneTreeModel', {
 	fields: [
                 {name: 'FormattedID', mapping: 'FormattedID', type: types.STRING},
                 {name: 'Name', mapping: 'Name', type: types.STRING},
+                {name: 'StartDate', mapping: 'ActualStartDate', type: types.DATE },
                 {name: 'TargetDate', mapping: 'AcceptedDate', type: types.DATE },
                 {name: 'TargetProject', mapping: 'TargetProject', type: types.OBJECT},
                 {name: 'ValueStream', mapping: 'ValueStream', type: types.STRING},
@@ -24,6 +25,7 @@ Ext.define('MilestoneDataModel', {
     fields: [
                 {name: 'FormattedID', mapping: 'FormattedID', type: types.STRING},
                 {name: 'Name', mapping: 'Name', type: types.STRING},
+                {name: 'StartDate', mapping: 'ActualStartDate', type: types.DATE },
                 {name: 'TargetDate', mapping: 'AcceptedDate', type: types.DATE },
                 {name: 'TargetProject', mapping: 'TargetProject', type: types.OBJECT},
                 {name: 'ValueStream', mapping: 'ValueStream', type: types.STRING},
@@ -258,6 +260,7 @@ Ext.define('CustomApp', {
         var milestoneData = Ext.create('MilestoneDataModel', {
             FormattedID : milestoneItem.get('FormattedID'),
             Name: milestoneItem.get('Name'),
+            StartDate: storyCountInfo.startDate,
             TargetDate : milestoneItem.get('TargetDate'),
             TargetProject : milestoneItem.get('Name'),
             ValueStream: milestoneItem.get('c_ValueStream'),
@@ -325,9 +328,10 @@ Ext.define('CustomApp', {
     _computeArtifactsAssociation: function(artifactColl){
         var storyCountInfo = {
             storyCount: 0,
-            acceptedCount: 0
+            acceptedCount: 0,
+            startDate: null
         };
-        var leafStoryCount = 0, acceptedLeafStoryCount = 0;
+        var leafStoryCount = 0, acceptedLeafStoryCount = 0, startDate = null;
         
         if(artifactColl.length > 0){
             Ext.Array.each(artifactColl, function(item){
@@ -340,16 +344,32 @@ Ext.define('CustomApp', {
                     if (scheduleState == 'Accepted') {
                         acceptedLeafStoryCount += 1;   
                     }
+                    
+                    var inProgressDate = item.get('InProgressDate');
+                    
+                    if (startDate === null || startDate > inProgressDate) {
+                        startDate = inProgressDate;    
+                    }
                 }
                 else {
                     leafStoryCount += item.get('LeafStoryCount');
-                    acceptedLeafStoryCount += item.get('AcceptedLeafStoryCount'); 
+                    acceptedLeafStoryCount += item.get('AcceptedLeafStoryCount');
+                    
+                    var portfolioStartDate = item.get('ActualStartDate');
+                    
+                    if (startDate === null || startDate > portfolioStartDate) {
+                        startDate = portfolioStartDate;    
+                    }
                 }
             });
         }
         
         storyCountInfo.storyCount = leafStoryCount;
         storyCountInfo.acceptedCount = acceptedLeafStoryCount;
+        
+        if (startDate !== null) {
+            storyCountInfo.startDate = startDate;    
+        }
         
         return storyCountInfo;
     },
@@ -469,6 +489,11 @@ Ext.define('CustomApp', {
                         hidden: true
                     },
                     {
+                        text: 'Start Date', 
+                        dataIndex: 'StartDate',
+                        flex: 1
+                    },
+                    {
                         text: 'Target Date', 
                         dataIndex: 'TargetDate',
                         flex: 1,
@@ -491,7 +516,7 @@ Ext.define('CustomApp', {
                                  var colorHex = '#77D38D';
                                  if(value.StoryProgressPercent && targetDate){
                                      per = parseFloat(value.StoryProgressPercent);
-                                     colorHex = me._getPercentDoneColor(targetDate);
+                                     colorHex = me._getPercentDoneColor(targetDate, value.StartDate, value.StoryProgressPercent);
                                  }
                                  //console.log('color in hex: ', colorHex);
                                  return colorHex;
@@ -534,25 +559,80 @@ Ext.define('CustomApp', {
         
         Ext.getBody().unmask();
     },
-    
-    _getPercentDoneColor: function(targetDate){
+
+    //uses Rally's algorithm to calculate percent done color
+    _getPercentDoneColor: function(milestoneEndDate, milestoneStartDate, milestonePercentDone) {
+        var greenHex = '#40FF00', yellowHex = '#F7FE2E', redHex = '#FE2E2E', blueHex = '#0000FF', whiteHex = '#FFFFFF';
         
-        var colorCode = '#40FF00';
-        //console.log('inside _getPercentDoneColor.....');
-        var dt = Rally.util.DateTime.getDifference(targetDate, new Date(), 'day');
+        var startDate = null, endDate = null;
+        var asOfDate = new Date();
+        var percentComplete = 100 * milestonePercentDone;
         
-        //console.log('Date difference: ', dt);
+        //set start date to the when the milestone started or today (if not started yet)
+        if (milestoneStartDate !== null) {
+            startDate = milestoneStartDate;
+        }
+        else {
+            startDate = asOfDate;
+        }
         
-        if(dt < 0)
-            colorCode = '#8A0829';
-        else if(dt > 0 && dt <=5)
-            colorCode = '#FE2E2E';
-        else if(dt > 5 && dt <=15)
-            colorCode = '#FE9A2E';
-         else if(dt > 15 && dt <=30)
-            colorCode = '#F7FE2E';
+        //set end date when the milestone ends or today (if end date not set)
+        if (milestoneEndDate !== null) {
+            endDate = milestoneEndDate;    
+        }
+        else {
+            endDate = asOfDate;
+        }
+         
+        //get date differences
+        var dateDifference = Rally.util.DateTime.getDifference(endDate, startDate, 'day');
+
+        var startDateNumber = 1;
+        var endDateNumber = startDateNumber + dateDifference;
+        var asOfDateNumber = Rally.util.DateTime.getDifference(asOfDate, startDate, 'day') + 1;
+
+        //delays could be configurable
+        var acceptanceStartDelay = (endDateNumber - startDateNumber) * 0.2;
+        var warningDelay = (endDateNumber - startDateNumber) * 0.2;
+        var inProgress = percentComplete > 0;
+        
+        //Today is before the start date
+        if (asOfDate < startDate) {
+            return whiteHex;
+        }
+        
+        //if the end date is in the past
+        if (asOfDate >= endDate) {
+            if (percentComplete >= 100.0) {
+                return blueHex;
+            }
             
-        return colorCode;
+            return redHex;
+        }
+            
+        //calculate red threshold
+        var redXIntercept = startDateNumber + acceptanceStartDelay + warningDelay;
+        var redSlope = 100.0 / (endDateNumber - redXIntercept);
+        var redYIntercept = -1.0 * redXIntercept * redSlope;
+        var redThreshold = redSlope * asOfDateNumber + redYIntercept;
+
+        //if percent done does not exceed threshold, return red
+        if (percentComplete < redThreshold) {
+            return redHex;
+        }
+        
+        //calculate yellow threshold
+        var yellowXIntercept = startDateNumber + acceptanceStartDelay;
+        var yellowSlope = 100 / (endDateNumber - yellowXIntercept);
+        var yellowYIntercept = -1.0 * yellowXIntercept * yellowSlope;
+        var yellowThreshold = yellowSlope * asOfDateNumber + yellowYIntercept;
+
+        //if percent done does not exceed threshold, return yellow
+        if (percentComplete < yellowThreshold) {
+            return yellowHex;
+        }
+        
+        return greenHex;
     },
     
     _createValueStreamNodesAlongWithAssociatedChildMilestoneNodes: function(valustreamRootNode){
@@ -593,6 +673,7 @@ Ext.define('CustomApp', {
         var milestoneTreeNode = Ext.create('MilestoneTreeModel',{
             FormattedID: milestoneData.get('FormattedID'),
             Name: milestoneData.get('Name'),
+            StartDate: milestoneData.get('StartDate'),
             TargetDate: milestoneData.get('TargetDate'),
             TargetProject: targetProjectName,
             DisplayColor: milestoneData.get('DisplayColor'),
