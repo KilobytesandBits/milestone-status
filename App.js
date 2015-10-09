@@ -13,7 +13,8 @@ Ext.define('MilestoneTreeModel', {
                 {name: 'Notes', mapping: 'Notes', type: types.STRING},
                 {name: '_ref', mapping: '_ref', type: types.STRING},
                 {name: 'AcceptedLeafStoryCount', mapping: 'AcceptedLeafStoryCount', type: types.STRING},
-                {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.STRING}
+                {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.STRING},
+                {name: 'StoryProgressPercent', mapping: 'StoryProgressPercent', type: types.FLOAT}
             ],
     hasMany: {model: 'FeatureTreeModel', name:'features', associationKey: 'features'}
 });
@@ -32,7 +33,8 @@ Ext.define('MilestoneDataModel', {
                 {name: 'Notes', mapping: 'Notes', type: types.STRING},
                 {name: '_ref', mapping: '_ref', type: types.STRING},
                 {name: 'AcceptedLeafStoryCount', mapping: 'AcceptedLeafStoryCount', type: types.INT},
-                {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.INT}
+                {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.INT},
+                {name: 'StoryProgressPercent', mapping: 'StoryProgressPercent', type: types.FLOAT}
             ]
 });
 
@@ -220,14 +222,20 @@ Ext.define('CustomApp', {
     
     _loadArtifactsForMilestones: function(milestoneArr){
         var that = this;
+        //console.log('inside _loadArtifactsForMilestones.....');
+        //console.log('imilestone records: ', milestoneArr);
         
         this._loadArtifacts(milestoneArr).then({
                 success: function(records){
                     that.milestoneDataArray = [];
                     
                     Ext.Array.each(records, function(record, index){
+                        //console.log('print milestone recs: ', record);
+                        //console.log('print milestone index: ', index);
+                        //console.log('milestone array: ', milestoneArr);
+                        
                         var storyCountInfo = that._computeArtifactsAssociation(record);
-                        //console.log('Milestone: [',  me.milestoneNameList[index] + '] has : (', storyCountInfo.acceptedCount + '/', storyCountInfo.storyCount + ') stories done.');
+                        //console.log('Milestone: [',  that.milestoneNameList[index] + '] has : (', storyCountInfo.acceptedCount + '/', storyCountInfo.storyCount + ') stories done.');
                         var milestoneRec = milestoneArr[index];
                         
                         var milestoneCustomData = that._createCustomMilestoneData(milestoneRec, storyCountInfo);
@@ -259,7 +267,8 @@ Ext.define('CustomApp', {
             Notes: milestoneItem.get('Notes'),
             _ref: milestoneItem.get('_ref'),
             AcceptedLeafStoryCount: storyCountInfo.acceptedCount,
-            LeafStoryCount: storyCountInfo.storyCount
+            LeafStoryCount: storyCountInfo.storyCount,
+            StoryProgressPercent: storyCountInfo.storyCount > 0 ? (storyCountInfo.acceptedCount/storyCountInfo.storyCount) : 0
         });
         
         return milestoneData;
@@ -275,6 +284,7 @@ Ext.define('CustomApp', {
                     models: ['portfolioitem/feature', 'defect', 'userstory'],
                     context: {
                         workspace: that.getContext().getWorkspace()._Ref,
+                        project: null,
                         limit: Infinity,
                         projectScopeUp: false,
                         projectScopeDown: true
@@ -319,23 +329,24 @@ Ext.define('CustomApp', {
         };
         var leafStoryCount = 0, acceptedLeafStoryCount = 0;
         
-        Ext.Array.each(artifactColl, function(item){
-            var itemType = item.get('_type');
-            var scheduleState = item.get('ScheduleState');
-            
-            if (itemType == 'hierarchicalrequirement' || itemType == 'defect') {
-                leafStoryCount += 1;
+        if(artifactColl.length > 0){
+            Ext.Array.each(artifactColl, function(item){
+                var itemType = item.get('_type');
+                var scheduleState = item.get('ScheduleState');
                 
-                if (scheduleState == 'Accepted') {
-                    acceptedLeafStoryCount += 1;   
+                if (itemType == 'hierarchicalrequirement' || itemType == 'defect') {
+                    leafStoryCount += 1;
+                    
+                    if (scheduleState == 'Accepted') {
+                        acceptedLeafStoryCount += 1;   
+                    }
                 }
-            }
-            else {
-                leafStoryCount += item.get('LeafStoryCount');
-                acceptedLeafStoryCount += item.get('AcceptedLeafStoryCount'); 
-            }
-            
-        });
+                else {
+                    leafStoryCount += item.get('LeafStoryCount');
+                    acceptedLeafStoryCount += item.get('AcceptedLeafStoryCount'); 
+                }
+            });
+        }
         
         storyCountInfo.storyCount = leafStoryCount;
         storyCountInfo.acceptedCount = acceptedLeafStoryCount;
@@ -366,6 +377,7 @@ Ext.define('CustomApp', {
         });
         
         this.valueStreamColl.sort();
+         //console.log('VS: coll', this.valueStreamColl);
         
         if(nonVSCount > 0) {
             this.valueStreamColl.push('N/A');
@@ -379,6 +391,8 @@ Ext.define('CustomApp', {
                 value: milestoneColl
             });
         });
+        
+        //console.log('Milestone by VS: ', this.valueStreamMilestoneColl);
         
         this._createValueStreamMilestonesTreeNode();
     },
@@ -395,12 +409,15 @@ Ext.define('CustomApp', {
                 
         this._createValueStreamNodesAlongWithAssociatedChildMilestoneNodes(valueStreamRootNode);
         
+        //console.log('milestone tree node: ', valueStreamRootNode);
+        
         this._createValueStreamMilestoneGrid(valueStreamRootNode);
         
     },
     
     _createValueStreamMilestoneGrid: function(valueStreamRootNode){
         
+       var me = this;
        var milestoneValueStreamTreeStore = Ext.create('Ext.data.TreeStore', {
             model: 'MilestoneTreeModel',
             root: valueStreamRootNode
@@ -461,14 +478,38 @@ Ext.define('CustomApp', {
                         }
                     },
                     {
+                        xtype: 'templatecolumn',
+                        text: 'Progress',
+                        dataIndex: 'StoryProgressPercent',
+                        tpl: Ext.create('Rally.ui.renderer.template.progressbar.ProgressBarTemplate', {
+                             percentDoneName: 'StoryProgressPercent',
+                             showOnlyIfInProgress: true,
+                             calculateColorFn: function(value){
+                                 //console.log('inside calculateColorFn.....value: ', value);
+                                 var targetDate = value.TargetDate;
+                                 var per = 0;
+                                 var colorHex = '#77D38D';
+                                 if(value.StoryProgressPercent && targetDate){
+                                     per = parseFloat(value.StoryProgressPercent);
+                                     colorHex = me._getPercentDoneColor(targetDate);
+                                 }
+                                 //console.log('color in hex: ', colorHex);
+                                 return colorHex;
+                             }
+                        }),
+                        flex: 1
+                    },
+                    {
                         text: 'Accepted Count',
                         dataIndex: 'AcceptedLeafStoryCount',
-                        flex: 1
+                        flex: 1,
+                        hidden: true
                     },
                     {
                         text: 'Story Count',
                         dataIndex: 'LeafStoryCount',
-                        flex: 1
+                        flex: 1,
+                        hidden: true
                     },
                     {
                         text: 'Status',
@@ -484,7 +525,7 @@ Ext.define('CustomApp', {
                     {
                         text: 'Notes',
                         dataIndex: 'Notes',
-                        flex: 5
+                        flex: 4
                     }
                 ]
         });
@@ -492,6 +533,26 @@ Ext.define('CustomApp', {
         this.add(valuestreamMilestoneTreePanel);
         
         Ext.getBody().unmask();
+    },
+    
+    _getPercentDoneColor: function(targetDate){
+        
+        var colorCode = '#40FF00';
+        //console.log('inside _getPercentDoneColor.....');
+        var dt = Rally.util.DateTime.getDifference(targetDate, new Date(), 'day');
+        
+        //console.log('Date difference: ', dt);
+        
+        if(dt < 0)
+            colorCode = '#8A0829';
+        else if(dt > 0 && dt <=5)
+            colorCode = '#FE2E2E';
+        else if(dt > 5 && dt <=15)
+            colorCode = '#FE9A2E';
+         else if(dt > 15 && dt <=30)
+            colorCode = '#F7FE2E';
+            
+        return colorCode;
     },
     
     _createValueStreamNodesAlongWithAssociatedChildMilestoneNodes: function(valustreamRootNode){
@@ -515,6 +576,7 @@ Ext.define('CustomApp', {
                     Name: valueStreamLable,
                     AcceptedLeafStoryCount: '',
                     LeafStoryCount: '',
+                    StoryProgressPercent: '',
                     leaf: false,
                     expandable: true,
                     expanded: true,
@@ -525,6 +587,7 @@ Ext.define('CustomApp', {
     },
     
     _createMilestoneNode: function(milestoneData){
+        //console.log('Percentage Done rec: ', milestoneData.get('StoryProgressPercent').toString());
         var targetProjectName = milestoneData.get('TargetProject') !== null ?  milestoneData.get('TargetProject')._refObjectName : 'Global';
         
         var milestoneTreeNode = Ext.create('MilestoneTreeModel',{
@@ -537,6 +600,7 @@ Ext.define('CustomApp', {
             _ref: milestoneData.get('_ref'),
             AcceptedLeafStoryCount: milestoneData.get('AcceptedLeafStoryCount').toString(),
             LeafStoryCount: milestoneData.get('LeafStoryCount').toString(),
+            StoryProgressPercent: milestoneData.get('StoryProgressPercent').toString(),
             leaf: true,
             expandable: false,
             expanded: false,
