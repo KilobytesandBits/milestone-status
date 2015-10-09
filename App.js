@@ -606,7 +606,7 @@ Ext.define('CustomApp', {
 
     //uses Rally's algorithm to calculate percent done color
     _getPercentDoneColor: function(milestoneEndDate, milestoneStartDate, milestonePercentDone) {
-        var greenHex = '#40FF00', yellowHex = '#F7FE2E', redHex = '#FE2E2E', blueHex = '#0000FF', whiteHex = '#FFFFFF';
+        var greenHex = '#1B801D', yellowHex = '#FFFF00', redHex = '#FE2E2E', blueHex = '#1874CD', whiteHex = '#FFFFFF';
         
         var startDate = null, endDate = null;
         var asOfDate = new Date();
