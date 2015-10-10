@@ -522,7 +522,14 @@ Ext.define('CustomApp', {
                     {
                         text: 'Start Date', 
                         dataIndex: 'StartDate',
-                        flex: 1
+                        flex: 1,
+                        renderer: function(value) {
+                            if(value) {
+                                //format date field to only show month and year
+                                return Rally.util.DateTime.format(value, 'm/d/Y');
+                            }
+                        },
+                        hidden: true
                     },
                     {
                         text: 'Target Date', 
