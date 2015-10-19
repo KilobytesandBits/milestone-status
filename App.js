@@ -560,6 +560,9 @@ Ext.define('CustomApp', {
                         tpl: Ext.create('Rally.ui.renderer.template.progressbar.ProgressBarTemplate', {
                              percentDoneName: 'StoryProgressPercent',
                              showOnlyIfInProgress: true,
+                             showDangerNotificationFn: function(value){
+                                 return true;
+                             },
                              calculateColorFn: function(value){
                                  //console.log('inside calculateColorFn.....value: ', value);
                                  var targetDate = value.TargetDate;
