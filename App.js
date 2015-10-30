@@ -557,6 +557,7 @@ Ext.define('CustomApp', {
                         xtype: 'templatecolumn',
                         text: 'Progress',
                         dataIndex: 'StoryProgressPercent',
+                        tooltip: 'click to view details.',
                         tpl: Ext.create('Rally.ui.renderer.template.progressbar.ProgressBarTemplate', {
                              percentDoneName: 'StoryProgressPercent',
                              showOnlyIfInProgress: true,
@@ -609,9 +610,63 @@ Ext.define('CustomApp', {
                 ]
         });
         
+        valuestreamMilestoneTreePanel.on({
+            cellclick: {fn: this._onTreePanelItemClick, scope: this}
+            //itemmouseenter: {fn: this._onTreePanelItemMouseEnter, scope: this}
+        });
+        
         this.down('#gridContainer').add(valuestreamMilestoneTreePanel);
         
         Ext.getBody().unmask();
+    },
+    
+     _onTreePanelItemClick: function(view, td, cellIndex, record, tr, rowIndex){
+         
+        if(cellIndex === 4){
+            console.log('In side the Progress bar cell');
+            console.log('On Cell Click: Data Model is : ', record);
+            
+            var tooltipTitle = '<h3>' + record.data.FormattedID + ' : ' + record.data.Name + '</h3>';
+            var htmlString = '<p><strong>Show Percent Done and total by Story Count</strong></p><p><strong>Show Percent Done and total by Plan Estimate</strong></p>';
+            
+            var tooltip = Ext.create('Rally.ui.tooltip.ToolTip', {
+                    target : td,
+                    //html: htmlString,
+                    anchor: 'left',
+                    items: [
+                        {
+                            xtype: 'label',
+                            forId: 'myFieldId',
+                            html: tooltipTitle,
+                            margin: '10 10 10 10'
+                        },
+                        {
+                            xtype : 'form',
+                            bodyPadding: 10,
+                            layout: 'fit',
+                            items: [{
+                                xtype: 'displayfield',
+                                fieldLabel: 'Details',
+                                hideLabel: true,
+                                name: 'progress_details',
+                                value: htmlString
+                            }]
+                        }],
+                    layout: {
+                        type: 'vbox',
+                        align: 'left'
+                    }
+                });
+                
+            console.log('Tool Tip: ', tooltip);
+        }
+        
+    },
+    
+    _onTreePanelItemMouseEnter: function(view, record, item, index){
+        console.log('On Mouse Enter: record is : ', record);
+        console.log('On Mouse Enter: column is : ', item);
+        console.log('On Mouse Enter: index is : ', index);
     },
 
     //uses Rally's algorithm to calculate percent done color
