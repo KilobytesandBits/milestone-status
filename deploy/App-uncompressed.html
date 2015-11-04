@@ -24,6 +24,7 @@ Ext.define('MilestoneTreeModel', {
                 {name: '_ref', mapping: '_ref', type: types.STRING},
                 {name: 'AcceptedLeafStoryCount', mapping: 'AcceptedLeafStoryCount', type: types.STRING},
                 {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.STRING},
+                {name: 'FeaturesWithoutChildrenCount', mapping: 'FeaturesWithoutChildrenCount', type: types.INT},
                 {name: 'StoryProgressPercent', mapping: 'StoryProgressPercent', type: types.FLOAT}
             ],
     hasMany: {model: 'FeatureTreeModel', name:'features', associationKey: 'features'}
@@ -45,6 +46,7 @@ Ext.define('MilestoneDataModel', {
                 {name: '_ref', mapping: '_ref', type: types.STRING},
                 {name: 'AcceptedLeafStoryCount', mapping: 'AcceptedLeafStoryCount', type: types.INT},
                 {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.INT},
+                {name: 'FeaturesWithoutChildrenCount', mapping: 'FeaturesWithoutChildrenCount', type: types.INT},
                 {name: 'StoryProgressPercent', mapping: 'StoryProgressPercent', type: types.FLOAT}
             ]
 });
@@ -305,6 +307,7 @@ Ext.define('CustomApp', {
             _ref: milestoneItem.get('_ref'),
             AcceptedLeafStoryCount: storyCountInfo.acceptedCount,
             LeafStoryCount: storyCountInfo.storyCount,
+            FeaturesWithoutChildrenCount: storyCountInfo.featureNotBrokenCount,
             StoryProgressPercent: storyCountInfo.storyCount > 0 ? (storyCountInfo.acceptedCount/storyCountInfo.storyCount) : 0
         });
         
@@ -363,9 +366,10 @@ Ext.define('CustomApp', {
         var storyCountInfo = {
             storyCount: 0,
             acceptedCount: 0,
-            startDate: null
+            startDate: null,
+            featureNotBrokenCount: 0
         };
-        var leafStoryCount = 0, acceptedLeafStoryCount = 0, startDate = null;
+        var leafStoryCount = 0, acceptedLeafStoryCount = 0, startDate = null, featuresWithoutChildren = 0;
         
         if(artifactColl.length > 0){
             Ext.Array.each(artifactColl, function(item){
@@ -386,11 +390,17 @@ Ext.define('CustomApp', {
                     }
                 }
                 else {
-                    leafStoryCount += item.get('LeafStoryCount');
-                    acceptedLeafStoryCount += item.get('AcceptedLeafStoryCount');
+                    
+                    if(item.get('LeafStoryCount') === 0){
+                        featuresWithoutChildren += 1;
+                    }
+                    else{
+                        leafStoryCount += item.get('LeafStoryCount');
+                        acceptedLeafStoryCount += item.get('AcceptedLeafStoryCount');
+                    }
                     
                     var portfolioStartDate = item.get('ActualStartDate');
-                    
+                        
                     if (startDate === null || startDate > portfolioStartDate) {
                         startDate = portfolioStartDate;    
                     }
@@ -400,6 +410,7 @@ Ext.define('CustomApp', {
         
         storyCountInfo.storyCount = leafStoryCount;
         storyCountInfo.acceptedCount = acceptedLeafStoryCount;
+        storyCountInfo.featureNotBrokenCount = featuresWithoutChildren;
         
         if (startDate !== null) {
             storyCountInfo.startDate = startDate;    
@@ -571,7 +582,10 @@ Ext.define('CustomApp', {
                              percentDoneName: 'StoryProgressPercent',
                              showOnlyIfInProgress: true,
                              showDangerNotificationFn: function(value){
-                                 return true;
+                                if(value.FeaturesWithoutChildrenCount > 0)
+                                    return true;
+                                else
+                                    return false;
                              },
                              calculateColorFn: function(value){
                                  //console.log('inside calculateColorFn.....value: ', value);
@@ -621,7 +635,6 @@ Ext.define('CustomApp', {
         
         valuestreamMilestoneTreePanel.on({
             cellclick: {fn: this._onTreePanelItemClick, scope: this}
-            //itemmouseenter: {fn: this._onTreePanelItemMouseEnter, scope: this}
         });
         
         this.down('#gridContainer').add(valuestreamMilestoneTreePanel);
@@ -636,7 +649,8 @@ Ext.define('CustomApp', {
             console.log('On Cell Click: Data Model is : ', record);
             
             var tooltipTitle = '<h3>' + record.data.FormattedID + ' : ' + record.data.Name + '</h3>';
-            var htmlString = '<p><strong>Show Percent Done and total by Story Count</strong></p><p><strong>Show Percent Done and total by Plan Estimate</strong></p>';
+            
+            var htmlString = this._getTootipPopupContent(record);
             
             var tooltip = Ext.create('Rally.ui.tooltip.ToolTip', {
                     target : td,
@@ -658,7 +672,8 @@ Ext.define('CustomApp', {
                                 fieldLabel: 'Details',
                                 hideLabel: true,
                                 name: 'progress_details',
-                                value: htmlString
+                                value: htmlString,
+                                autoScroll: true
                             }]
                         }],
                     layout: {
@@ -670,6 +685,33 @@ Ext.define('CustomApp', {
             console.log('Tool Tip: ', tooltip);
         }
         
+    },
+    
+    _getTootipPopupContent: function(record){
+        var progressPercentage = (record.data.StoryProgressPercent.toFixed(2) * 100);
+        var htmlstring = '<h3>Progress:</h3>';
+        htmlstring += '<p>Total Story Count: <span><strong>' + record.data.LeafStoryCount + '</strong></span></p>';
+        htmlstring += '<p>Total Accepted Story Count: <span><strong>' + record.data.AcceptedLeafStoryCount + '</strong></span></p>';
+        htmlstring += '<p>Percentage of Progress: <span><strong>' + progressPercentage + ' %</strong></span></p>';
+        htmlstring += '<hr>';
+        
+        if(record.data.FeaturesWithoutChildrenCount > 0){
+            htmlstring += '<h3 style="color:red;">Alerts:</h3>';
+            htmlstring += '<p style="color:red; font-weight: bold;">There are <span><u>' + record.data.FeaturesWithoutChildrenCount + ' Features</u></span> still not broken down into user stories.</p>';
+            htmlstring += '<hr>';
+        }
+        
+        var targetDate = record.data.TargetDate !== null ? Rally.util.DateTime.format(record.data.TargetDate, 'm/d/Y') : 'Not Mentioned';
+        var actualStartDate = record.data.StartDate !== null ? Rally.util.DateTime.format(record.data.StartDate, 'm/d/Y') : 'Not Started';
+        htmlstring += '<h3>Info:</h3>';
+        htmlstring += '<p>Milestone Target Date: <span><strong>' + targetDate + '</strong></p>';
+        htmlstring += '<p>Milestone Actual Start Date: <span><strong>' + actualStartDate + '</strong></p>';
+        htmlstring += '<hr>';
+        
+        htmlstring += '<h3>Notes: <h3>';
+        htmlstring += '<p style="width: 100px; white-space: pre-line;">' + record.data.Notes + '</p>';
+        
+        return htmlstring;
     },
     
     _onTreePanelItemMouseEnter: function(view, record, item, index){
@@ -800,6 +842,7 @@ Ext.define('CustomApp', {
             AcceptedLeafStoryCount: milestoneData.get('AcceptedLeafStoryCount').toString(),
             LeafStoryCount: milestoneData.get('LeafStoryCount').toString(),
             StoryProgressPercent: milestoneData.get('StoryProgressPercent').toString(),
+            FeaturesWithoutChildrenCount: milestoneData.get('FeaturesWithoutChildrenCount').toString(),
             leaf: true,
             expandable: false,
             expanded: false,
