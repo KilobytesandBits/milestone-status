@@ -4,6 +4,7 @@ Ext.define('MilestoneTreeModel', {
 	fields: [
                 {name: 'FormattedID', mapping: 'FormattedID', type: types.STRING},
                 {name: 'Name', mapping: 'Name', type: types.STRING},
+                {name: 'StartDate', mapping: 'ActualStartDate', type: types.DATE },
                 {name: 'TargetDate', mapping: 'AcceptedDate', type: types.DATE },
                 {name: 'TargetProject', mapping: 'TargetProject', type: types.OBJECT},
                 {name: 'ValueStream', mapping: 'ValueStream', type: types.STRING},
@@ -11,10 +12,36 @@ Ext.define('MilestoneTreeModel', {
                 {name: 'Status', mapping: 'Status', type: types.STRING},
                 {name: 'DisplayColor', mapping: 'DisplayColor', type: types.STRING},
                 {name: 'Notes', mapping: 'Notes', type: types.STRING},
-                {name: '_ref', mapping: '_ref', type: types.STRING}
+                {name: '_ref', mapping: '_ref', type: types.STRING},
+                {name: 'AcceptedLeafStoryCount', mapping: 'AcceptedLeafStoryCount', type: types.STRING},
+                {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.STRING},
+                {name: 'FeaturesWithoutChildrenCount', mapping: 'FeaturesWithoutChildrenCount', type: types.INT},
+                {name: 'StoryProgressPercent', mapping: 'StoryProgressPercent', type: types.FLOAT}
             ],
     hasMany: {model: 'FeatureTreeModel', name:'features', associationKey: 'features'}
 });
+
+Ext.define('MilestoneDataModel', {
+    extend: 'Ext.data.Model',
+    fields: [
+                {name: 'FormattedID', mapping: 'FormattedID', type: types.STRING},
+                {name: 'Name', mapping: 'Name', type: types.STRING},
+                {name: 'StartDate', mapping: 'ActualStartDate', type: types.DATE },
+                {name: 'TargetDate', mapping: 'AcceptedDate', type: types.DATE },
+                {name: 'TargetProject', mapping: 'TargetProject', type: types.OBJECT},
+                {name: 'ValueStream', mapping: 'ValueStream', type: types.STRING},
+                {name: 'Visibility', mapping: 'Visibility', type: types.STRING},
+                {name: 'Status', mapping: 'Status', type: types.STRING},
+                {name: 'DisplayColor', mapping: 'DisplayColor', type: types.STRING},
+                {name: 'Notes', mapping: 'Notes', type: types.STRING},
+                {name: '_ref', mapping: '_ref', type: types.STRING},
+                {name: 'AcceptedLeafStoryCount', mapping: 'AcceptedLeafStoryCount', type: types.INT},
+                {name: 'LeafStoryCount', mapping: 'LeafStoryCount', type: types.INT},
+                {name: 'FeaturesWithoutChildrenCount', mapping: 'FeaturesWithoutChildrenCount', type: types.INT},
+                {name: 'StoryProgressPercent', mapping: 'StoryProgressPercent', type: types.FLOAT}
+            ]
+});
+
 
 Ext.define('CustomApp', {
     extend: 'Rally.app.App',
@@ -189,7 +216,7 @@ Ext.define('CustomApp', {
             sorters: [
                 {
                     property: 'c_ValueStream',
-                    direaction: 'ASC'
+                    direction: 'ASC'
                 },
                 {
                     property: 'TargetDate',
@@ -218,7 +245,169 @@ Ext.define('CustomApp', {
             }
         });
         
-        this._organiseMilestoneBasedOnValuestream(filteredMilestonesArr);
+        this._loadArtifactsForMilestones(filteredMilestonesArr);
+        //this._organiseMilestoneBasedOnValuestream(filteredMilestonesArr);
+    },
+    
+    _loadArtifactsForMilestones: function(milestoneArr){
+        var that = this;
+        //console.log('inside _loadArtifactsForMilestones.....');
+        //console.log('imilestone records: ', milestoneArr);
+        
+        this._loadArtifacts(milestoneArr).then({
+                success: function(records){
+                    that.milestoneDataArray = [];
+                    
+                    Ext.Array.each(records, function(record, index){
+                        //console.log('print milestone recs: ', record);
+                        //console.log('print milestone index: ', index);
+                        //console.log('milestone array: ', milestoneArr);
+                        
+                        var storyCountInfo = that._computeArtifactsAssociation(record);
+                        //console.log('Milestone: [',  that.milestoneNameList[index] + '] has : (', storyCountInfo.acceptedCount + '/', storyCountInfo.storyCount + ') stories done.');
+                        var milestoneRec = milestoneArr[index];
+                        
+                        var milestoneCustomData = that._createCustomMilestoneData(milestoneRec, storyCountInfo);
+                        that.milestoneDataArray.push(milestoneCustomData);
+                    });
+                    
+                    //console.log('Milestone Artifact Data list: ', that.milestoneDataArray);
+                    
+                    that._organiseMilestoneBasedOnValuestream(that.milestoneDataArray);
+                },
+                failure: function(error){
+                    console.log('There are some errors');
+                    Ext.getBody().unmask();
+                },
+            scope: that
+            });
+    },
+    
+    _createCustomMilestoneData: function(milestoneItem, storyCountInfo){
+        var milestoneData = Ext.create('MilestoneDataModel', {
+            FormattedID : milestoneItem.get('FormattedID'),
+            Name: milestoneItem.get('Name'),
+            StartDate: storyCountInfo.startDate,
+            TargetDate : milestoneItem.get('TargetDate'),
+            TargetProject : milestoneItem.get('Name'),
+            ValueStream: milestoneItem.get('c_ValueStream'),
+            Visibility: milestoneItem.get('c_ExecutiveVisibility'),
+            Status: milestoneItem.get('c_Test'),
+            DisplayColor: milestoneItem.get('DisplayColor'),
+            Notes: milestoneItem.get('Notes'),
+            _ref: milestoneItem.get('_ref'),
+            AcceptedLeafStoryCount: storyCountInfo.acceptedCount,
+            LeafStoryCount: storyCountInfo.storyCount,
+            FeaturesWithoutChildrenCount: storyCountInfo.featureNotBrokenCount,
+            StoryProgressPercent: storyCountInfo.storyCount > 0 ? (storyCountInfo.acceptedCount/storyCountInfo.storyCount) : 0
+        });
+        
+        return milestoneData;
+    },
+    
+    _loadArtifacts: function(milestoneList){
+        var promises = [];
+        var that = this;
+        
+        Ext.Array.each(milestoneList, function(milestone){
+            
+            var artifactStore = Ext.create('Rally.data.wsapi.artifact.Store', {
+                    models: ['portfolioitem/feature', 'defect', 'userstory'],
+                    context: {
+                        workspace: that.getContext().getWorkspace()._Ref,
+                        project: null,
+                        limit: Infinity,
+                        projectScopeUp: false,
+                        projectScopeDown: true
+                    },
+                    filters: [
+                        {
+                            property: 'Milestones.ObjectID',
+                            operator: '=',
+                            value: milestone.get('ObjectID')
+                        }
+                    ]
+            });
+            
+            promises.push(that._loadArtifactStore(artifactStore));
+            
+        });
+        
+        return Deft.Promise.all(promises);
+    },
+    
+    _loadArtifactStore: function(store){
+        var deferred;
+        deferred = Ext.create('Deft.Deferred');
+        
+        store.load({
+                callback: function(records, operation, success) {
+                  if (success) {
+                    deferred.resolve(records);
+                  } else {
+                    deferred.reject("Error loading Companies.");
+                  }
+                }
+            });
+            
+        return deferred.promise;
+    },
+    
+    _computeArtifactsAssociation: function(artifactColl){
+        var storyCountInfo = {
+            storyCount: 0,
+            acceptedCount: 0,
+            startDate: null,
+            featureNotBrokenCount: 0
+        };
+        var leafStoryCount = 0, acceptedLeafStoryCount = 0, startDate = null, featuresWithoutChildren = 0;
+        
+        if(artifactColl.length > 0){
+            Ext.Array.each(artifactColl, function(item){
+                var itemType = item.get('_type');
+                var scheduleState = item.get('ScheduleState');
+                
+                if (itemType == 'hierarchicalrequirement' || itemType == 'defect') {
+                    leafStoryCount += 1;
+                    
+                    if (scheduleState == 'Accepted') {
+                        acceptedLeafStoryCount += 1;   
+                    }
+                    
+                    var inProgressDate = item.get('InProgressDate');
+                    
+                    if (startDate === null || startDate > inProgressDate) {
+                        startDate = inProgressDate;    
+                    }
+                }
+                else {
+                    
+                    if(item.get('LeafStoryCount') === 0){
+                        featuresWithoutChildren += 1;
+                    }
+                    else{
+                        leafStoryCount += item.get('LeafStoryCount');
+                        acceptedLeafStoryCount += item.get('AcceptedLeafStoryCount');
+                    }
+                    
+                    var portfolioStartDate = item.get('ActualStartDate');
+                        
+                    if (startDate === null || startDate > portfolioStartDate) {
+                        startDate = portfolioStartDate;    
+                    }
+                }
+            });
+        }
+        
+        storyCountInfo.storyCount = leafStoryCount;
+        storyCountInfo.acceptedCount = acceptedLeafStoryCount;
+        storyCountInfo.featureNotBrokenCount = featuresWithoutChildren;
+        
+        if (startDate !== null) {
+            storyCountInfo.startDate = startDate;    
+        }
+        
+        return storyCountInfo;
     },
     
     _organiseMilestoneBasedOnValuestream: function(filteredMilestonesArr){
@@ -228,7 +417,7 @@ Ext.define('CustomApp', {
         var that = this;
         
         Ext.Array.each(filteredMilestonesArr, function(thisData){
-            var valuestream = thisData.get('c_ValueStream');
+            var valuestream = thisData.get('ValueStream');
             
             if(valuestream !== null && valuestream !== ''){
                 if(that.valueStreamColl.length === 0){
@@ -244,6 +433,7 @@ Ext.define('CustomApp', {
         });
         
         this.valueStreamColl.sort();
+         //console.log('VS: coll', this.valueStreamColl);
         
         if(nonVSCount > 0) {
             this.valueStreamColl.push('N/A');
@@ -257,6 +447,8 @@ Ext.define('CustomApp', {
                 value: milestoneColl
             });
         });
+        
+        //console.log('Milestone by VS: ', this.valueStreamMilestoneColl);
         
         this._createValueStreamMilestonesTreeNode();
     },
@@ -273,6 +465,8 @@ Ext.define('CustomApp', {
                 
         this._createValueStreamNodesAlongWithAssociatedChildMilestoneNodes(valueStreamRootNode);
         
+        //console.log('milestone tree node: ', valueStreamRootNode);
+        
         this._createValueStreamMilestoneGrid(valueStreamRootNode);
         
     },
@@ -283,6 +477,7 @@ Ext.define('CustomApp', {
         if (milestonesTreePanel)
             milestonesTreePanel.destroy();
         
+       var me = this;
        var milestoneValueStreamTreeStore = Ext.create('Ext.data.TreeStore', {
             model: 'MilestoneTreeModel',
             root: valueStreamRootNode
@@ -336,6 +531,18 @@ Ext.define('CustomApp', {
                         hidden: true
                     },
                     {
+                        text: 'Start Date', 
+                        dataIndex: 'StartDate',
+                        flex: 1,
+                        renderer: function(value) {
+                            if(value) {
+                                //format date field to only show month and year
+                                return Rally.util.DateTime.format(value, 'm/d/Y');
+                            }
+                        },
+                        hidden: true
+                    },
+                    {
                         text: 'Target Date', 
                         dataIndex: 'TargetDate',
                         flex: 1,
@@ -358,6 +565,47 @@ Ext.define('CustomApp', {
                         }
                     },
                     {
+                        xtype: 'templatecolumn',
+                        text: 'Progress',
+                        dataIndex: 'StoryProgressPercent',
+                        tooltip: 'click to view details.',
+                        tpl: Ext.create('Rally.ui.renderer.template.progressbar.ProgressBarTemplate', {
+                             percentDoneName: 'StoryProgressPercent',
+                             showOnlyIfInProgress: true,
+                             showDangerNotificationFn: function(value){
+                                if(value.FeaturesWithoutChildrenCount > 0)
+                                    return true;
+                                else
+                                    return false;
+                             },
+                             calculateColorFn: function(value){
+                                 //console.log('inside calculateColorFn.....value: ', value);
+                                 var targetDate = value.TargetDate;
+                                 var per = 0;
+                                 var colorHex = '#77D38D';
+                                 if(value.StoryProgressPercent && targetDate){
+                                     per = parseFloat(value.StoryProgressPercent);
+                                     colorHex = me._getPercentDoneColor(targetDate, value.StartDate, value.StoryProgressPercent);
+                                 }
+                                 //console.log('color in hex: ', colorHex);
+                                 return colorHex;
+                             }
+                        }),
+                        flex: 1
+                    },
+                    {
+                        text: 'Accepted Count',
+                        dataIndex: 'AcceptedLeafStoryCount',
+                        flex: 1,
+                        hidden: true
+                    },
+                    {
+                        text: 'Story Count',
+                        dataIndex: 'LeafStoryCount',
+                        flex: 1,
+                        hidden: true
+                    },
+                    {
                         text: 'Status',
                         dataIndex: 'DisplayColor',
                         flex: 1,
@@ -371,14 +619,171 @@ Ext.define('CustomApp', {
                     {
                         text: 'Notes',
                         dataIndex: 'Notes',
-                        flex: 5
+                        flex: 4
                     }
                 ]
+        });
+        
+        valuestreamMilestoneTreePanel.on({
+            cellclick: {fn: this._onTreePanelItemClick, scope: this}
         });
         
         this.down('#gridContainer').add(valuestreamMilestoneTreePanel);
         
         Ext.getBody().unmask();
+    },
+    
+     _onTreePanelItemClick: function(view, td, cellIndex, record, tr, rowIndex){
+         
+        if(cellIndex === 4){
+            console.log('In side the Progress bar cell');
+            console.log('On Cell Click: Data Model is : ', record);
+            
+            var tooltipTitle = '<h3>' + record.data.FormattedID + ' : ' + record.data.Name + '</h3>';
+            
+            var htmlString = this._getTootipPopupContent(record);
+            
+            var tooltip = Ext.create('Rally.ui.tooltip.ToolTip', {
+                    target : td,
+                    //html: htmlString,
+                    anchor: 'left',
+                    items: [
+                        {
+                            xtype: 'label',
+                            forId: 'myFieldId',
+                            html: tooltipTitle,
+                            margin: '10 10 10 10'
+                        },
+                        {
+                            xtype : 'form',
+                            bodyPadding: 10,
+                            layout: 'fit',
+                            items: [{
+                                xtype: 'displayfield',
+                                fieldLabel: 'Details',
+                                hideLabel: true,
+                                name: 'progress_details',
+                                value: htmlString,
+                                autoScroll: true
+                            }]
+                        }],
+                    layout: {
+                        type: 'vbox',
+                        align: 'left'
+                    }
+                });
+                
+            console.log('Tool Tip: ', tooltip);
+        }
+        
+    },
+    
+    _getTootipPopupContent: function(record){
+        var progressPercentage = (record.data.StoryProgressPercent.toFixed(2) * 100);
+        var htmlstring = '<h3>Progress:</h3>';
+        htmlstring += '<p>Total Story Count: <span><strong>' + record.data.LeafStoryCount + '</strong></span></p>';
+        htmlstring += '<p>Total Accepted Story Count: <span><strong>' + record.data.AcceptedLeafStoryCount + '</strong></span></p>';
+        htmlstring += '<p>Percentage of Progress: <span><strong>' + progressPercentage + ' %</strong></span></p>';
+        htmlstring += '<hr>';
+        
+        if(record.data.FeaturesWithoutChildrenCount > 0){
+            htmlstring += '<h3 style="color:red;">Alerts:</h3>';
+            htmlstring += '<p style="color:red; font-weight: bold;">There are <span><u>' + record.data.FeaturesWithoutChildrenCount + ' Features</u></span> still not broken down into user stories.</p>';
+            htmlstring += '<hr>';
+        }
+        
+        var targetDate = record.data.TargetDate !== null ? Rally.util.DateTime.format(record.data.TargetDate, 'm/d/Y') : 'Not Mentioned';
+        var actualStartDate = record.data.StartDate !== null ? Rally.util.DateTime.format(record.data.StartDate, 'm/d/Y') : 'Not Started';
+        htmlstring += '<h3>Info:</h3>';
+        htmlstring += '<p>Milestone Target Date: <span><strong>' + targetDate + '</strong></p>';
+        htmlstring += '<p>Milestone Actual Start Date: <span><strong>' + actualStartDate + '</strong></p>';
+        htmlstring += '<hr>';
+        
+        htmlstring += '<h3>Notes: <h3>';
+        htmlstring += '<p style="width: 100px; white-space: pre-line;">' + record.data.Notes + '</p>';
+        
+        return htmlstring;
+    },
+    
+    _onTreePanelItemMouseEnter: function(view, record, item, index){
+        console.log('On Mouse Enter: record is : ', record);
+        console.log('On Mouse Enter: column is : ', item);
+        console.log('On Mouse Enter: index is : ', index);
+    },
+
+    //uses Rally's algorithm to calculate percent done color
+    _getPercentDoneColor: function(milestoneEndDate, milestoneStartDate, milestonePercentDone) {
+        var greenHex = '#1B801D', yellowHex = '#FFFF00', redHex = '#FE2E2E', blueHex = '#1874CD', whiteHex = '#FFFFFF';
+        
+        var startDate = null, endDate = null;
+        var asOfDate = new Date();
+        var percentComplete = 100 * milestonePercentDone;
+        
+        //set start date to the when the milestone started or today (if not started yet)
+        if (milestoneStartDate !== null) {
+            startDate = milestoneStartDate;
+        }
+        else {
+            startDate = asOfDate;
+        }
+        
+        //set end date when the milestone ends or today (if end date not set)
+        if (milestoneEndDate !== null) {
+            endDate = milestoneEndDate;    
+        }
+        else {
+            endDate = asOfDate;
+        }
+         
+        //get date differences
+        var dateDifference = Rally.util.DateTime.getDifference(endDate, startDate, 'day');
+
+        var startDateNumber = 1;
+        var endDateNumber = startDateNumber + dateDifference;
+        var asOfDateNumber = Rally.util.DateTime.getDifference(asOfDate, startDate, 'day') + 1;
+
+        //delays could be configurable
+        var acceptanceStartDelay = (endDateNumber - startDateNumber) * 0.2;
+        var warningDelay = (endDateNumber - startDateNumber) * 0.2;
+        var inProgress = percentComplete > 0;
+        
+        //Today is before the start date
+        if (asOfDate < startDate) {
+            return whiteHex;
+        }
+        
+        //if the end date is in the past
+        if (asOfDate >= endDate) {
+            if (percentComplete >= 100.0) {
+                return blueHex;
+            }
+            
+            return redHex;
+        }
+            
+        //calculate red threshold
+        var redXIntercept = startDateNumber + acceptanceStartDelay + warningDelay;
+        var redSlope = 100.0 / (endDateNumber - redXIntercept);
+        var redYIntercept = -1.0 * redXIntercept * redSlope;
+        var redThreshold = redSlope * asOfDateNumber + redYIntercept;
+
+        //if percent done does not exceed threshold, return red
+        if (percentComplete < redThreshold) {
+            return redHex;
+        }
+        
+        //calculate yellow threshold
+        var yellowXIntercept = startDateNumber + acceptanceStartDelay;
+        var yellowSlope = 100 / (endDateNumber - yellowXIntercept);
+        var yellowYIntercept = -1.0 * yellowXIntercept * yellowSlope;
+        var yellowThreshold = yellowSlope * asOfDateNumber + yellowYIntercept;
+
+        //if percent done does not exceed threshold, return yellow
+        if (percentComplete < yellowThreshold) {
+            return yellowHex;
+        }
+        
+        return greenHex;
     },
     
     _createValueStreamNodesAlongWithAssociatedChildMilestoneNodes: function(valustreamRootNode){
@@ -400,6 +805,9 @@ Ext.define('CustomApp', {
         var valueStreamLable = 'valuestream: ' + valuestreamData;
         var valustreamTreeNode = Ext.create('MilestoneTreeModel',{
                     Name: valueStreamLable,
+                    AcceptedLeafStoryCount: '',
+                    LeafStoryCount: '',
+                    StoryProgressPercent: '',
                     leaf: false,
                     expandable: true,
                     expanded: true,
@@ -410,16 +818,22 @@ Ext.define('CustomApp', {
     },
     
     _createMilestoneNode: function(milestoneData){
+        //console.log('Percentage Done rec: ', milestoneData.get('StoryProgressPercent').toString());
         var targetProjectName = milestoneData.get('TargetProject') !== null ?  milestoneData.get('TargetProject')._refObjectName : 'Global';
         
         var milestoneTreeNode = Ext.create('MilestoneTreeModel',{
             FormattedID: milestoneData.get('FormattedID'),
             Name: milestoneData.get('Name'),
+            StartDate: milestoneData.get('StartDate'),
             TargetDate: milestoneData.get('TargetDate'),
             TargetProject: targetProjectName,
             DisplayColor: milestoneData.get('DisplayColor'),
             Notes: milestoneData.get('Notes'),
             _ref: milestoneData.get('_ref'),
+            AcceptedLeafStoryCount: milestoneData.get('AcceptedLeafStoryCount').toString(),
+            LeafStoryCount: milestoneData.get('LeafStoryCount').toString(),
+            StoryProgressPercent: milestoneData.get('StoryProgressPercent').toString(),
+            FeaturesWithoutChildrenCount: milestoneData.get('FeaturesWithoutChildrenCount').toString(),
             leaf: true,
             expandable: false,
             expanded: false,
@@ -434,7 +848,7 @@ Ext.define('CustomApp', {
         var that = this;
         
         Ext.Array.each(milestoneStoreData, function(milestone) {
-            var vsRecord = milestone.get('c_ValueStream');
+            var vsRecord = milestone.get('ValueStream');
             vsRecord = (vsRecord !== null && vsRecord !== '') ? vsRecord : 'N/A';
             
             if(vsRecord === valuestream){
