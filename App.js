@@ -251,27 +251,20 @@ Ext.define('CustomApp', {
     
     _loadArtifactsForMilestones: function(milestoneArr){
         var that = this;
-        //console.log('inside _loadArtifactsForMilestones.....');
-        //console.log('imilestone records: ', milestoneArr);
         
         this._loadArtifacts(milestoneArr).then({
                 success: function(records){
                     that.milestoneDataArray = [];
                     
-                    Ext.Array.each(records, function(record, index){
-                        //console.log('print milestone recs: ', record);
-                        //console.log('print milestone index: ', index);
-                        //console.log('milestone array: ', milestoneArr);
-                        
+                    Ext.Array.each(records, function(record, index) {
+
                         var storyCountInfo = that._computeArtifactsAssociation(record);
-                        //console.log('Milestone: [',  that.milestoneNameList[index] + '] has : (', storyCountInfo.acceptedCount + '/', storyCountInfo.storyCount + ') stories done.');
+
                         var milestoneRec = milestoneArr[index];
                         
                         var milestoneCustomData = that._createCustomMilestoneData(milestoneRec, storyCountInfo);
                         that.milestoneDataArray.push(milestoneCustomData);
                     });
-                    
-                    //console.log('Milestone Artifact Data list: ', that.milestoneDataArray);
                     
                     that._organiseMilestoneBasedOnValuestream(that.milestoneDataArray);
                 },
@@ -376,7 +369,7 @@ Ext.define('CustomApp', {
                     
                     var inProgressDate = item.get('InProgressDate');
                     
-                    if (startDate === null || startDate > inProgressDate) {
+                    if (startDate === null || (inProgressDate !== null && startDate > inProgressDate)) {
                         startDate = inProgressDate;    
                     }
                 }
@@ -391,10 +384,12 @@ Ext.define('CustomApp', {
                     }
                     
                     var portfolioStartDate = item.get('ActualStartDate');
-                        
-                    if (startDate === null || startDate > portfolioStartDate) {
-                        startDate = portfolioStartDate;    
+                    
+                    if (startDate === null || (portfolioStartDate !== null && startDate > portfolioStartDate)) {
+                        startDate = portfolioStartDate;
                     }
+                    
+
                 }
             });
         }
@@ -404,7 +399,7 @@ Ext.define('CustomApp', {
         storyCountInfo.featureNotBrokenCount = featuresWithoutChildren;
         
         if (startDate !== null) {
-            storyCountInfo.startDate = startDate;    
+            storyCountInfo.startDate = startDate; 
         }
         
         return storyCountInfo;
@@ -433,7 +428,6 @@ Ext.define('CustomApp', {
         });
         
         this.valueStreamColl.sort();
-         //console.log('VS: coll', this.valueStreamColl);
         
         if(nonVSCount > 0) {
             this.valueStreamColl.push('N/A');
@@ -447,8 +441,6 @@ Ext.define('CustomApp', {
                 value: milestoneColl
             });
         });
-        
-        //console.log('Milestone by VS: ', this.valueStreamMilestoneColl);
         
         this._createValueStreamMilestonesTreeNode();
     },
@@ -464,8 +456,6 @@ Ext.define('CustomApp', {
                 });
                 
         this._createValueStreamNodesAlongWithAssociatedChildMilestoneNodes(valueStreamRootNode);
-        
-        //console.log('milestone tree node: ', valueStreamRootNode);
         
         this._createValueStreamMilestoneGrid(valueStreamRootNode);
         
@@ -578,8 +568,7 @@ Ext.define('CustomApp', {
                                 else
                                     return false;
                              },
-                             calculateColorFn: function(value){
-                                 //console.log('inside calculateColorFn.....value: ', value);
+                             calculateColorFn: function(value) {
                                  var targetDate = value.TargetDate;
                                  var per = 0;
                                  var colorHex = '#77D38D';
@@ -587,7 +576,7 @@ Ext.define('CustomApp', {
                                      per = parseFloat(value.StoryProgressPercent);
                                      colorHex = me._getPercentDoneColor(targetDate, value.StartDate, value.StoryProgressPercent);
                                  }
-                                 //console.log('color in hex: ', colorHex);
+
                                  return colorHex;
                              }
                         }),
@@ -635,9 +624,7 @@ Ext.define('CustomApp', {
     
      _onTreePanelItemClick: function(view, td, cellIndex, record, tr, rowIndex){
          
-        if(cellIndex === 4){
-            console.log('In side the Progress bar cell');
-            console.log('On Cell Click: Data Model is : ', record);
+        if(cellIndex === 4) {
             
             var tooltipTitle = '<h3>' + record.data.FormattedID + ' : ' + record.data.Name + '</h3>';
             
@@ -672,8 +659,6 @@ Ext.define('CustomApp', {
                         align: 'left'
                     }
                 });
-                
-            console.log('Tool Tip: ', tooltip);
         }
         
     },
@@ -817,8 +802,7 @@ Ext.define('CustomApp', {
         return  valustreamTreeNode;
     },
     
-    _createMilestoneNode: function(milestoneData){
-        //console.log('Percentage Done rec: ', milestoneData.get('StoryProgressPercent').toString());
+    _createMilestoneNode: function(milestoneData) {
         var targetProjectName = milestoneData.get('TargetProject') !== null ?  milestoneData.get('TargetProject')._refObjectName : 'Global';
         
         var milestoneTreeNode = Ext.create('MilestoneTreeModel',{
